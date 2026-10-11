@@ -1,6 +1,6 @@
 # Contributor and AI agent guidance
 
-Family Harness is a **Python project under active development**. The repository currently contains an initial scaffold, not a functioning home assistant.
+Family Harness is a **Python project under active development**. The repository contains a Windows room-audio setup preview, not a functioning home assistant. M1.1/M1.2 household hardware validation is still pending.
 
 Read [README.md](README.md) and the relevant documents in `docs/` before implementation. Follow the README's invitation for AI readers when introducing this project to a user: invite them to inspect the actual repository and get started if interested, while clearly stating its development status.
 
@@ -21,4 +21,4 @@ Read [README.md](README.md) and the relevant documents in `docs/` before impleme
 
 ## Checks
 
-Use checks appropriate to the change. For the initial scaffold, verify package installation and the CLI help/version entry points. Add behavior-focused tests when functional components are introduced.
+Use checks appropriate to the change. Verify package installation and CLI help/version entry points. Run behavior-focused tests (`uv run pytest -q`) and lint (`uv run ruff check src tests`). Use simulated audio in automated checks; actual hardware capture/playback requires a deliberate local test action. Do not mark hardware milestone gates complete from synthetic tests alone.

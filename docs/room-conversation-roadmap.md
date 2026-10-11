@@ -1,6 +1,6 @@
 # Milestone 1: Room Conversation Manager
 
-**Status: planned, 2026-10-11.** This is a roadmap, not implemented functionality. The repository currently contains a Python scaffold with CLI help and version commands. No installer, audio capture, model integration, or conversation manager exists yet.
+**Status: in progress, 2026-10-11.** M1.1 and the M1.2 audio/diagnostic foundation are implemented as a Windows WASAPI preview, with automated tests and read-only host discovery checks. The first household capture/playback trial and the acoustic exit gates remain pending. Model integration and the conversation manager do not exist yet. See [delivered behavior and validation](audio-setup.md); the remaining sections describe the planned full milestone.
 
 ## Outcome and scope
 
@@ -10,7 +10,7 @@ The first supported processing profile is **English, local CPU, one room**. A Co
 
 All inference, voice profiles, configuration, and room state remain local in this profile. After dependencies and models are acquired, it must work without internet access. Installation must not activate a microphone, enroll anyone, start a persistent listener, or contact an inference service automatically. Downloads require an explicit installation action and an explanation of their size and purpose; importing already downloaded models should also be possible.
 
-Keep the core in Python. A small browser interface served by the Python application is an agreed part of setup. Framework and packaging choices remain open until the first implementation step.
+Keep the core in Python. A small browser interface served by the Python application is an agreed part of setup. The preview uses a Python loopback HTTP server and packaged HTML/CSS/JavaScript, with an explicit Windows bootstrap/launcher. A consumer installer remains later work.
 
 **TODO extension profiles:** larger local/GPU models, cloud providers, and additional languages including Farsi. Keep language and execution location independent: a language adapter may use CPU or GPU. English-first validation does not justify English-only data structures.
 
@@ -72,7 +72,7 @@ flowchart TD
     Summary --> Health[Room health and repair tools]
 ```
 
-This is the complete planned journey. M1.1 implements the beginning through saved audio choices; subsequent phases unlock the remaining steps. Each phase must provide a useful result without pretending the entire wizard already works.
+This is the complete planned journey. The preview implements room naming through saved audio choices, noise/placement checks, and duplex energy diagnostics. Models, enrollment, and room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
 
 Use ordinary labels such as "Microphone on this computer", "Use my phone", "Test speaker", and "Someone farther away cannot be heard". Keep sample rates, transport protocols, model IDs, and debug traces in advanced diagnostics.
 
@@ -88,6 +88,8 @@ Show current room, selected source, listening/test status, stop/mute controls, a
 | **M1.4 Room manager core** | Common event contracts; session lifecycle; provisional/final utterances; temporary speaker labels; response IDs; playback progress; deterministic reply/replay harness | Replays demonstrate correct turn assembly, late-event handling, session closure, and cancellation without requiring an LLM |
 | **M1.5 People and group turns** | Guided voice enrollment; stable person IDs; confidence/unknown states; speaker changes; configurable participation policy; attribution updates | Two enrolled people and an unknown guest can contribute sequentially; uncertain speech is not forced onto a known person |
 | **M1.6 Interruptions and milestone validation** | Immediate local output stop; generation cancellation interface; heard-so-far history; overlap recovery; resource contention and restart checks; integrated guided trial | One person can interrupt a reply and another can continue; unresolved overlap produces an understandable recovery path; setup results and performance limits are reported |
+
+**Current gate evidence:** M1.1 has simulated device, configuration, stop, reconnect, permission-error, and browser-flow checks; native read-only discovery works on the Windows development host. M1.2 has actual WebRTC processing exercised with synthetic delayed echo and a separate near signal, exact output-reference checks, clock-gap detection, bounded-buffer/drop checks, and visible diagnostic results. Neither phase is signed off on the first household's real microphone/speaker. Transcription and false interruptions cannot be validated until M1.3–M1.6 are integrated.
 
 M1.1 establishes the audio endpoint interface and basic frame metadata. Later phases extend these contracts rather than replacing the configured input path. Replay fixtures make room logic testable before live recognition is reliable.
 

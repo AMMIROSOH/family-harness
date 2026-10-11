@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Room audio setup · Family Harness</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="brand">Family Harness <span class="tag">Development preview</span></div>
+    <h1>A room that can hear you.</h1>
+    <p>Set up audio on this computer. No account or voice model is needed.</p>
+  </header>
+  <aside class="control" aria-label="Listening controls">
+    <div><strong id="listening">Microphone off · no test running</strong>
+      <p id="active-room">Choose your room below.</p></div>
+    <button id="stop" class="stop" type="button">Stop / mute audio</button>
+  </aside>
+  <main>
+    <div id="error" class="notice error" role="alert" hidden></div>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <form id="setup-form">
+      <section class="card" aria-labelledby="room-heading">
+        <div class="step">01 · Your space</div>
+        <h2 id="room-heading">Where will you use it?</h2>
+        <div class="grid">
+          <label>Space name<input id="space-name" name="space" dir="auto" maxlength="120"
+            required placeholder="Our home"></label>
+          <label>Room name<input id="room-name" name="room" dir="auto" maxlength="120"
+            required placeholder="Living room"></label>
+        </div>
+        <p>Setup listens only during a test you start. Every test ends automatically. Stop / mute ends it
+          immediately; closing this page ends it within three seconds. Audio stays in memory and is discarded.</p>
+      </section>
+      <section class="card" aria-labelledby="input-heading">
+        <div class="step">02 · Microphone on this computer</div>
+        <h2 id="input-heading">Choose what hears you.</h2>
+        <p>Built-in, USB, wired, and Bluetooth devices must appear in Windows Sound settings.
+          Phone, browser microphone, and network sources are planned for later.</p>
+        <div class="grid">
+          <label>Microphone<select id="input-device" required><option value="">Choose a microphone</option></select></label>
+          <label>How you intend to use it<select id="device-use">
+            <option value="room">Shared room microphone</option>
+            <option value="headset">Personal headset</option>
+            <option value="conference">Conference device</option>
+          </select></label>
+        </div>
+        <p id="placement-help">Place the microphone away from the speaker and fans. Try your usual speaking position.</p>
+        <div class="actions"><button id="refresh" type="button">Refresh devices</button>
+          <button class="test primary" data-kind="microphone" type="button">Test microphone · 8 seconds</button></div>
+        <p id="device-warning" role="status"></p>
+      </section>
+      <section class="card" aria-labelledby="speaker-heading">
+        <div class="step">03 · Speaker on this computer</div>
+        <h2 id="speaker-heading">Choose what you hear.</h2>
+        <label>Speaker<select id="output-device" required><option value="">Choose a speaker</option></select></label>
+        <p>Turn your volume down first. Play the quiet test notes, then adjust to a comfortable level.</p>
+        <div class="actions"><button class="test primary" data-kind="speaker" type="button">Test speaker · 3 seconds</button></div>
+        <label class="check"><input type="checkbox" id="speaker-confirmed">I heard the sound at a comfortable volume.</label>
+      </section>
+      <section class="card" aria-labelledby="acoustics-heading">
+        <div class="step">04 · Placement, noise &amp; echo</div>
+        <h2 id="acoustics-heading">Try the whole room.</h2>
+        <p>Test while quiet, then speak from nearby and from the farthest position you expect to use.
+          Test the microphone again at each position.</p>
+        <div class="grid">
+          <label>Speaking position<select id="position"><option value="near">Nearby / usual position</option>
+            <option value="far">Farthest intended position</option></select></label>
+          <label>Who removes speaker echo?<select id="echo-owner">
+            <option value="software">Family Harness (WebRTC)</option>
+            <option value="device">My device already removes echo</option>
+          </select></label>
+        </div>
+        <p id="echo-help">Use one echo remover. In Windows Sound settings and your device's app,
+          disable microphone echo cancellation / audio enhancements before using Family Harness.</p>
+        <label class="check"><input type="checkbox" id="echo-confirmed">I checked that only the selected echo remover is enabled.</label>
+        <div class="actions"><button class="test" data-kind="noise" type="button">Check background noise · 5 seconds</button>
+          <button class="test primary" data-kind="duplex" type="button">Test speaking during playback · 12 seconds</button></div>
+        <p>The duplex test starts with 2 quiet seconds, plays notes for 5 seconds while you stay quiet,
+          then asks you to speak for 4 seconds while notes continue. Follow the live instructions.</p>
+        <div class="test-display">
+          <p id="test-instruction" role="status" aria-live="polite">Ready for a test.</p>
+          <label for="input-level">Microphone level</label>
+          <meter id="input-level" value="0" min="0" max="1" low="0.05" high="0.9" optimum="0.4"></meter>
+          <span id="level-text">Microphone off</span>
+          <progress id="test-progress" max="1" value="0" aria-label="Audio test progress"></progress>
+        </div>
+        <div id="results" aria-label="Audio test results"></div>
+      </section>
+      <section class="card" aria-labelledby="save-heading">
+        <div class="step">05 · Keep your choices</div>
+        <h2 id="save-heading">Save &amp; return anytime.</h2>
+        <p>Saving does not start listening. Missing devices require a new selection; the app never switches microphones silently.</p>
+        <button id="save" class="primary" type="submit">Save room audio setup</button>
+        <div id="summary" role="status"></div>
+        <p class="muted">Conversations are not available yet. Next: the local English voice profile (M1.3),
+          room manager, people, and interruption validation. Energy checks here cannot verify transcription quality.</p>
+        <details><summary>Advanced diagnostics</summary><pre id="diagnostics">No test results yet.</pre></details>
+      </section>
+    </form>
+  </main>
+  <footer>Local control · Windows WASAPI preview · No audio uploads or saved recordings</footer>
+</body>
+</html>

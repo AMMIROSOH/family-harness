@@ -1,6 +1,6 @@
 # Setup experience
 
-**Status: planned.** The current CLI provides help and version only; no setup tools exist yet.
+**Status: audio setup preview implemented.** The CLI launches a localhost wizard for Windows native device discovery, bounded microphone/speaker tests, noise/placement checks, duplex diagnostics, and saved room choices. The full guided conversation journey remains planned; household hardware validation is pending. See the [current setup guide](audio-setup.md).
 
 Setup is part of the product. Regular users should not need to understand audio device indices, model identifiers, sample rates, provider SDKs, or environment variables to have their first conversation.
 
@@ -24,7 +24,7 @@ Native devices attached to the host computer are supported first. Plan separate 
 | Try a conversation | Exchange attributed turns and interrupt a test reply | Deterministic responder first, heard-so-far state, overlap recovery, specific troubleshooting |
 | Review room health | See what passed and what needs attention | Saved configuration, diagnostic results, repair actions, explicit start/stop |
 
-The complete journey is phased; M1.1 delivers through saved basic audio choices. Full duplex checks, models, enrollment, and the conversation trial become usable as their roadmap phases are completed.
+The complete journey is phased. M1.1 implements saved audio choices; the M1.2 foundation adds duplex processing and numeric acoustic diagnostics. Real-room duplex validation, models, enrollment, and the conversation trial still need their roadmap gates.
 
 The default profile needs no provider account and performs inference locally. Future cloud profiles must be explicitly selected and use authentication actually supported by the provider. Never silently use a cloud fallback in offline mode.
 

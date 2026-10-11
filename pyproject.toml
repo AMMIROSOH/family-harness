@@ -8,10 +8,29 @@ version = "0.1.0.dev0"
 description = "A Python foundation for shared voice agents in homes and other collaborative spaces."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "numpy>=2.2,<3",
+    "sounddevice>=0.5.5,<0.6",
+    "pywebrtc-audio>=0.2,<0.3",
+    "pycaw>=20251023; sys_platform == 'win32'",
+    "platformdirs>=4.3,<5",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "ruff>=0.11,<1"]
 
 [project.scripts]
 family-harness = "family_harness.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/family_harness"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
