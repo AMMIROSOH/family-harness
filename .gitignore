@@ -1,0 +1,24 @@
+# Python tooling and builds
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+
+# Local configuration, credentials, and personal data
+.env
+.env.*
+!.env.example
+.local/
+data/
+recordings/
+*.log
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

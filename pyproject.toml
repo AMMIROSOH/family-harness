@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "family-harness"
+version = "0.1.0.dev0"
+description = "A Python foundation for shared voice agents in homes and other collaborative spaces."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+family-harness = "family_harness.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/family_harness"]
