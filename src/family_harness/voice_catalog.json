@@ -1,0 +1,85 @@
+{
+  "schema_version": 1,
+  "id": "english-cpu-v2",
+  "replaces": "english-cpu-v1",
+  "language": "en",
+  "execution": "local-cpu",
+  "label": "English CPU evaluation profile",
+  "components": {
+    "vad": "Silero ONNX (sherpa release asset)",
+    "stt": "Zipformer English 2023-06-26, chunk 16 / left context 128, int8 encoder/joiner",
+    "tts": "Piper en_US-lessac-low"
+  },
+  "licenses": [
+    {
+      "component": "sherpa-onnx core code and Zipformer weights (eSpeak separately below)",
+      "license": "Apache-2.0",
+      "source": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26"
+    },
+    {
+      "component": "Silero VAD code and weights",
+      "license": "MIT",
+      "source": "https://github.com/snakers4/silero-vad"
+    },
+    {
+      "component": "Piper Lessac voice weights",
+      "license": "MIT",
+      "source": "https://huggingface.co/rhasspy/piper-voices/blob/main/README.md"
+    },
+    {
+      "component": "Lessac training dataset (not downloaded); model card points to its own terms",
+      "license": "Blizzard 2013 research license",
+      "source": "https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html"
+    },
+    {
+      "component": "eSpeak NG phonemizer and data bundled with sherpa",
+      "license": "GPL-3.0-or-later",
+      "source": "https://github.com/espeak-ng/espeak-ng/blob/master/COPYING"
+    }
+  ],
+  "assets": [
+    {
+      "name": "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "size": 71083163,
+      "sha256": "563fde436d16cf7607cf408cd6b30909819d03162652ef389c2450ced3f45ac1",
+      "destination": "stt/encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+    },
+    {
+      "name": "decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/decoder-epoch-99-avg-1-chunk-16-left-128.onnx",
+      "size": 2092621,
+      "sha256": "7bf787f90b194b307e5a4ad6a34fadb4e748304c35f78a8d66358a05b13ee6ef",
+      "destination": "stt/decoder-epoch-99-avg-1-chunk-16-left-128.onnx"
+    },
+    {
+      "name": "joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx",
+      "size": 259335,
+      "sha256": "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297",
+      "destination": "stt/joiner-epoch-99-avg-1-chunk-16-left-128.int8.onnx"
+    },
+    {
+      "name": "tokens.txt",
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-streaming-zipformer-en-2023-06-26/resolve/672fbf1b30579d6585301139bb363f42a0ad4a24/tokens.txt",
+      "size": 5048,
+      "sha256": "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb",
+      "destination": "stt/tokens.txt"
+    },
+    {
+      "name": "silero_vad.onnx",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/silero_vad.onnx",
+      "size": 643854,
+      "sha256": "9e2449e1087496d8d4caba907f23e0bd3f78d91fa552479bb9c23ac09cbb1fd6",
+      "destination": "vad/silero_vad.onnx"
+    },
+    {
+      "name": "vits-piper-en_US-lessac-low.tar.bz2",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-lessac-low.tar.bz2",
+      "size": 67097098,
+      "sha256": "8fb427b8637334072ee5723d72fa418c45bfdd4b7deebeacdf2938662618c1cb",
+      "archive_prefix": "vits-piper-en_US-lessac-low",
+      "destination": "tts"
+    }
+  ]
+}

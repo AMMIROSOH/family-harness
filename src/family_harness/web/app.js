@@ -30,9 +30,12 @@ function selection() {
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll(".test, #refresh, #save, input, select").forEach((item) => item.disabled = value);
+  document.querySelectorAll(".test, .voice-action, #refresh, #save, input, select").forEach((item) => item.disabled = value);
   $("listening").textContent = value ? "Audio test active · use Stop / mute anytime" : "Microphone off · no test running";
-  if (!value) { $("input-level").value = 0; $("level-text").textContent = "Microphone off"; }
+  if (!value) {
+    $("input-level").value = 0; $("level-text").textContent = "Microphone off";
+    $("voice-level").value = 0; $("voice-level-text").textContent = "Microphone off";
+  }
 }
 function deviceOptions(id, devices, selected) {
   const select = $(id);
@@ -129,6 +132,8 @@ async function start(kind) {
 $("stop").addEventListener("click", async () => {
   try {
     await api("/api/stop", {}); jobId = null; setBusy(false);
+    $("voice-instruction").textContent = "Stopped. Audio is off; voice models are released.";
+    $("voice-progress").value = 0;
     $("test-progress").value = 0;
     $("test-instruction").textContent = "Stopped. Microphone and speaker are released.";
   } catch (error) { showError(error); }
@@ -166,6 +171,7 @@ let configPath = "";
 (async () => {
   try {
     const state = await api("/api/state"); token = state.token; saved = state.config; configPath = state.config_path;
+    renderVoiceState(state.voice);
     if (saved) {
       $("space-name").value = saved.space_name; $("room-name").value = saved.room_name;
       $("device-use").value = saved.device_use || "room"; $("echo-owner").value = saved.echo_owner;
@@ -176,3 +182,84 @@ let configPath = "";
     await refresh(true); renderResults();
   } catch (error) { showError(error); }
 })();
+
+function renderVoiceState(voice) {
+  $("voice-status").textContent = voice.installed ?
+    "English profile installed. Integrity is checked before loading; audio is off." :
+    voice.upgrade_available ?
+    "An English profile update is available to improve missing opening words. Download or import it before a voice trial. Your previous profile is retained; audio is off." :
+    "English profile is not installed. Download or import it to run a voice trial.";
+  $("voice-catalog").textContent = JSON.stringify(voice, null, 2);
+}
+const voiceInstructions = {
+  starting: "Starting the operation. Audio is off.",
+  installing: "Installing and checking local model files. Audio is off.",
+  loading: "Checking integrity and loading local models. Audio is off.",
+  warming: "Warming local models before use. Audio is off.",
+  listening: "Speak now: say one English sentence, then pause. Microphone is on, speaker is off.",
+  synthesizing: "Microphone is off. Preparing the fixed local test response.",
+  playback: "Microphone is off. Listen for the test voice. Stop / mute ends playback.",
+};
+function voiceRecovery(report) {
+  if (report.playback_completed)
+    return "Playback completed. Check the transcript and confirm you heard the voice; no quality gate is automatically passed.";
+  const levels = report.input_levels?.raw;
+  if (levels?.clipping_fraction > 0.01)
+    return "Microphone input clipped. Lower the Windows microphone volume or boost, and retry.";
+  if (levels?.rms_dbfs <= -65)
+    return "Microphone input was very quiet. Check mute, Windows input volume / microphone boost, and point the microphone toward you. Compare a nearby and distant trial.";
+  if (report.recognition_status === "speech_without_text")
+    return "Speech activity was detected, but no English words were recognized. Check the microphone level, use an English sentence, and reduce background noise. A headset boom may need to face you or be closer.";
+  if (report.recognition_status === "no_speech_detected")
+    return "No speech activity detected. Check microphone selection, mute and input volume, then compare nearby and distant speech. Noise suppression in your device or Windows may remove distant speech.";
+  return "The trial reached its limit without a completed sentence. Retry one English sentence, then pause.";
+}
+async function pollVoice(id) {
+  try {
+    const job = await api(`/api/job?id=${encodeURIComponent(id)}`);
+    if (jobId !== id) return;
+    const progress = job.progress;
+    $("voice-instruction").textContent = voiceInstructions[progress.phase] || "Finishing the operation.";
+    $("listening").textContent = progress.phase === "listening" ? "Voice trial · microphone on" :
+      progress.phase === "playback" ? "Voice trial · speaker on · microphone off" : "Voice operation · audio off";
+    $("voice-progress").value = progress.total_bytes ? progress.bytes / progress.total_bytes :
+      Math.min(1, (progress.seconds || 0) / (progress.duration || 1));
+    if (progress.phase === "listening" && Number.isFinite(progress.level_dbfs)) {
+      const level = progress.level_dbfs;
+      $("voice-level").value = Math.max(0, Math.min(1, (level + 80) / 80));
+      $("voice-level-text").textContent =
+        `${level < -65 ? "Very quiet input" : level < -45 ? "Quiet input" : "Input present"}: ${level} dBFS · adjusted: ${progress.processed_level_dbfs ?? "—"} dBFS · ${progress.speech_active ? "speech activity detected" : "waiting for speech"}`;
+    } else { $("voice-level").value = 0; $("voice-level-text").textContent = "Microphone off"; }
+    if (job.transcript) $("voice-transcript").textContent =
+      `${job.transcript.final ? "Transcript" : "Draft transcript"}: ${job.transcript.text || "No speech recognized."}`;
+    if (job.status === "running") { setTimeout(() => pollVoice(id), 250); return; }
+    jobId = null; setBusy(false);
+    $("voice-progress").value = job.status === "completed" ? 1 : 0;
+    if (job.status === "error") showError(job.error);
+    $("voice-instruction").textContent = job.status === "completed" ?
+      "Operation complete. Audio is off; voice models are released." : job.reason || "Operation failed. Audio is off.";
+    if (job.result) {
+      const {transcript, utterance_id, ...report} = job.result;
+      $("voice-diagnostics").textContent = JSON.stringify(report, null, 2);
+      const metrics = report.measurements;
+      $("voice-result").textContent = metrics ?
+        `Load: ${report.load_seconds}s · warm-up: ${report.warm_seconds}s · peak sampled RAM: ${metrics.peak_sampled_rss_mb} MB · mean CPU: ${metrics.mean_cpu_core_percent}% of one core. ` +
+        (job.request.kind === "voice_trial" ? voiceRecovery(report) :
+          "This speed check does not verify speech accuracy or room hardware.") : "Model operation complete.";
+    }
+    const state = await api("/api/state"); renderVoiceState(state.voice);
+  } catch (error) {
+    if (jobId !== id) return;
+    showError(error); jobId = null; setBusy(false);
+    $("voice-instruction").textContent = "Connection lost. The operation will stop within three seconds.";
+  }
+}
+document.querySelectorAll(".voice-action").forEach((button) => button.addEventListener("click", async () => {
+  $("error").hidden = true;
+  $("voice-transcript").textContent = "";
+  setBusy(true);
+  try {
+    const job = await api("/api/voice", {...selection(), kind: button.dataset.action, source: $("model-source").value});
+    jobId = job.id; pollVoice(jobId);
+  } catch (error) { setBusy(false); showError(error); }
+}));

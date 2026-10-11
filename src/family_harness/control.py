@@ -9,10 +9,12 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 from uuid import uuid4
 
 from family_harness.devices import Device, resolve
 from family_harness.errors import SetupError
+from family_harness.models import ModelStore
 
 TEST_SECONDS = {"microphone": 8, "noise": 5, "speaker": 3, "duplex": 12}
 LEASE_SECONDS = 3
@@ -53,9 +55,13 @@ class AudioControl:
         discovery: Callable = discover,
         command: list[str] | None = None,
         lease_seconds: float = LEASE_SECONDS,
+        models: Path | None = None,
+        voice_command: list[str] | None = None,
     ):
         self.discovery = discovery
         self.command = command or [sys.executable, "-m", "family_harness.audio_worker", "run"]
+        self.voice_command = voice_command or [sys.executable, "-m", "family_harness.voice_worker"]
+        self.models = ModelStore(models)
         self.lease_seconds = lease_seconds
         self.lock = threading.RLock()
         self.devices: list[Device] = []
@@ -136,9 +142,69 @@ class AudioControl:
                 "position": position,
                 "endpoint_id": self.endpoint_id,
             }
+            return self._launch(request, self.command, TEST_SECONDS[kind], TEST_SECONDS[kind] + 20)
+
+    def start_voice(self, data: dict) -> dict:
+        kind = data.get("kind")
+        if kind not in (
+            "voice_install",
+            "voice_import",
+            "voice_remove",
+            "voice_warm",
+            "voice_trial",
+        ):
+            raise SetupError(
+                "invalid_voice_action",
+                "Choose an available voice profile action.",
+                "Use a button in the voice profile section.",
+            )
+        with self.lock:
+            if self.closed.is_set():
+                raise SetupError("setup_closed", "Setup is shutting down.", "Reopen setup.")
+            if self.job and self.job["status"] == "running":
+                raise SetupError(
+                    "test_running",
+                    "Another setup operation is running.",
+                    "Use Stop before starting another operation.",
+                )
+            request = {"kind": kind, "models": str(self.models.root)}
+            if kind == "voice_import":
+                source = data.get("source")
+                if not isinstance(source, str) or not source.strip() or len(source) > 4096:
+                    raise SetupError(
+                        "invalid_import",
+                        "Enter the local model folder path.",
+                        "Use a folder on this PC containing the catalog files.",
+                    )
+                request["source"] = source
+            if kind == "voice_trial":
+                resolve(self.devices, data.get("input_id"), "input")
+                resolve(self.devices, data.get("output_id"), "output")
+                if data.get("speaker_confirmed") is not True:
+                    raise SetupError(
+                        "speaker_unconfirmed",
+                        "Check the speaker volume first.",
+                        "Run Test speaker and confirm it was comfortable.",
+                    )
+                request.update(
+                    {
+                        "input_id": data["input_id"],
+                        "output_id": data["output_id"],
+                        "endpoint_id": self.endpoint_id,
+                    }
+                )
+            return self._launch(
+                request,
+                self.voice_command,
+                20,
+                600 if kind in ("voice_install", "voice_import") else 120,
+            )
+
+    def _launch(self, request: dict, command: list[str], duration: int, timeout: int) -> dict:
+        with self.lock:
             try:
                 process = subprocess.Popen(
-                    self.command,
+                    command,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
@@ -156,7 +222,7 @@ class AudioControl:
                     process.wait()
                 raise SetupError(
                     "test_start_failed",
-                    "The audio test could not start.",
+                    "The setup operation could not start.",
                     "Check the installation and try again.",
                 ) from exc
             self.process = process
@@ -167,12 +233,12 @@ class AudioControl:
                 "progress": {
                     "phase": "starting",
                     "seconds": 0,
-                    "duration": TEST_SECONDS[kind],
+                    "duration": duration,
                     "level": 0,
                 },
             }
             self.touched = time.monotonic()
-            self.deadline = self.touched + TEST_SECONDS[kind] + 20
+            self.deadline = self.touched + timeout
             job = self.job
             self.reader = threading.Thread(
                 target=self._read, args=(process, job), name="audio-test-results", daemon=True
@@ -188,7 +254,11 @@ class AudioControl:
                     if job["status"] != "running":
                         continue
                     if event.get("type") == "progress":
-                        job["progress"] = event
+                        job["progress"].update(event)
+                    elif event.get("type") == "transcript":
+                        job["transcript"] = event
+                    elif event.get("type") == "turn_candidate":
+                        job["candidate"] = event
                     elif event.get("type") == "result":
                         job["result"] = event["result"]
                     elif event.get("type") == "error":
@@ -201,8 +271,9 @@ class AudioControl:
                         result = copy.deepcopy(job["result"])
                         result["selection"] = job["request"]
                         result["tested_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-                        self.results.append(result)
-                        self.results = self.results[-20:]
+                        if not job["request"]["kind"].startswith("voice_"):
+                            self.results.append(result)
+                            self.results = self.results[-20:]
                     else:
                         job["status"] = "error"
                         job.setdefault(

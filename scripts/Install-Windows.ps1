@@ -2,8 +2,8 @@
 $ErrorActionPreference = 'Stop'
 $taskRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not [Environment]::Is64BitOperatingSystem) { throw 'Use Windows 10/11 x64 for this preview.' }
-Write-Host 'Installing the local room-audio preview. This downloads Python if needed and Python libraries.'
-Write-Host 'Allow roughly 50-100 MB of downloads on a fresh machine. No voice models or accounts are required.'
+Write-Host 'Installing the room-audio and English speech preview libraries. Python is downloaded if needed.'
+Write-Host 'Allow roughly 70-130 MB of downloads on a fresh machine. Voice models are installed separately.'
 Write-Host 'Audio will remain off. Run Start-Setup.cmd after installation.'
 $taskUv = Join-Path $taskRoot '.local\tools\bin\uv.exe'
 if (-not (Test-Path -LiteralPath $taskUv)) {

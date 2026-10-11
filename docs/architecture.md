@@ -1,8 +1,8 @@
 # Architecture direction
 
-**Status: partially implemented.** The Windows native audio endpoint, local room configuration, and localhost setup/control boundary exist as a preview. The speech, identity, conversation, and agent boundaries remain proposed. No speech recognition, voice model, or agent backend has been integrated.
+**Status: partially implemented.** The Windows native audio endpoint, local room configuration, localhost setup/control boundary, and local English speech-profile test exist as previews. Identity, conversation, and agent boundaries remain proposed. Speech detection, streaming recognition, synthesis, and model management are integrated for one bounded test utterance; no agent backend or room manager exists.
 
-The first milestone is the [Room Conversation Manager](room-conversation-roadmap.md), beginning with the implemented localhost room-audio setup. Its first speech profile will be English with local CPU processing; that profile remains planned. See the [audio implementation notes](audio-setup.md#implementation-boundaries) for delivered contracts and limitations.
+The first milestone is the [Room Conversation Manager](room-conversation-roadmap.md), beginning with localhost audio setup and the [English CPU profile](local-voice-profile.md). Hardware exit gates remain pending. See the [audio implementation notes](audio-setup.md#implementation-boundaries) for delivered contracts and limitations.
 
 ## Separate responsibilities
 

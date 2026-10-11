@@ -95,11 +95,52 @@
         <p>Saving does not start listening. Missing devices require a new selection; the app never switches microphones silently.</p>
         <button id="save" class="primary" type="submit">Save room audio setup</button>
         <div id="summary" role="status"></div>
-        <p class="muted">Conversations are not available yet. Next: the local English voice profile (M1.3),
-          room manager, people, and interruption validation. Energy checks here cannot verify transcription quality.</p>
+        <p class="muted">Next, try the local English voice profile below. Room conversations,
+          people, and interruptions remain planned. Energy checks cannot verify transcription quality.</p>
         <details><summary>Advanced diagnostics</summary><pre id="diagnostics">No test results yet.</pre></details>
       </section>
     </form>
+    <section class="card" aria-labelledby="voice-heading">
+      <div class="step">06 · Local English voice preview</div>
+      <h2 id="voice-heading">Try hearing and speaking offline.</h2>
+      <p>Install the English CPU evaluation profile separately: about 135 MiB of downloads for speech
+        detection, transcription, and a test voice. Allow 400 MiB of free disk space during installation.
+        Models stay on this PC. Installing or checking speed leaves audio off.</p>
+      <p id="voice-status" role="status">Checking the local profile.</p>
+      <div class="actions">
+        <button id="voice-install" class="voice-action primary" data-action="voice_install" type="button">Download English profile · 135 MiB</button>
+        <button id="voice-warm" class="voice-action" data-action="voice_warm" type="button">Check model speed · audio off</button>
+      </div>
+      <details><summary>Import models, licenses &amp; removal</summary>
+        <p>For an offline installation, copy the original catalog files into a folder on this PC.
+          Enter that folder's full path. Imported files receive the same integrity checks as downloads.</p>
+        <label>Local model folder<input id="model-source" placeholder="C:\Models\English" dir="auto"></label>
+        <div class="actions"><button id="voice-import" class="voice-action" data-action="voice_import" type="button">Import from folder · offline</button>
+          <button id="voice-remove" class="voice-action" data-action="voice_remove" type="button">Remove English model files</button></div>
+        <p>Removal affects this installed model profile. Room choices and benchmark reports are retained.</p>
+        <pre id="voice-catalog"></pre>
+      </details>
+      <p>Check the speaker volume above, then explicitly start a voice trial. Wait for “Speak now”,
+        say one English sentence, and pause. Capture lasts at most 20 seconds. After a silence candidate,
+        the microphone closes and a fixed test response plays. A short pause can end a sentence early.</p>
+      <button id="voice-trial" class="voice-action primary" data-action="voice_trial" type="button">Start voice trial · microphone then speaker</button>
+      <p>This is one speech test. It does not recognize people, answer questions, or handle interruptions.</p>
+      <div class="test-display">
+        <p id="voice-instruction" role="status" aria-live="polite">Audio is off.</p>
+        <label for="voice-level">Microphone input before level adjustment</label>
+        <meter id="voice-level" value="0" min="0" max="1" low="0.3" high="0.95" optimum="0.7"></meter>
+        <span id="voice-level-text">Microphone off</span>
+        <progress id="voice-progress" max="1" value="0" aria-label="Voice operation progress"></progress>
+        <p id="voice-transcript" dir="auto" aria-live="polite"></p>
+      </div>
+      <p class="muted">The voice trial adjusts quiet input and reduces steady noise automatically.
+        Compare the microphone level and transcript at your intended distance. A headset may reduce
+        sound away from its boom microphone; level adjustment cannot recover speech hidden by noise.</p>
+      <p id="voice-result" role="status"></p>
+      <p class="muted">Transcripts stay in this page and process memory. Only numeric diagnostics, model
+        versions, and hardware details are saved. Household offline validation is still pending.</p>
+      <details><summary>Voice performance diagnostics</summary><pre id="voice-diagnostics">No benchmark yet.</pre></details>
+    </section>
   </main>
   <footer>Local control · Windows WASAPI preview · No audio uploads or saved recordings</footer>
 </body>

@@ -124,3 +124,53 @@ def test_success_saves_only_completed_aggregate_results(tmp_path, devices, selec
         assert not control.diagnostics({**selection, "input_id": "different"})
     finally:
         control.close()
+
+
+def test_voice_jobs_share_audio_exclusion_and_disconnect_cancellation(control, selection):
+    control.voice_command = control.command
+    job = control.start_voice({"kind": "voice_warm"})
+    with pytest.raises(SetupError) as error:
+        control.start({**selection, "kind": "speaker"})
+    assert error.value.code == "test_running"
+    with pytest.raises(SetupError):
+        control.start_voice({"kind": "voice_remove"})
+    wait_until(lambda: control.process.poll() is not None)
+    assert control.job["status"] == "cancelled"
+    assert control.poll(job["id"])["request"]["kind"] == "voice_warm"
+
+
+def test_voice_trial_requires_selected_devices_and_volume_confirmation(control, selection):
+    control.voice_command = control.command
+    with pytest.raises(SetupError) as error:
+        control.start_voice({**selection, "kind": "voice_trial", "speaker_confirmed": False})
+    assert error.value.code == "speaker_unconfirmed"
+    assert control.process is None
+    control.devices = []
+    with pytest.raises(SetupError):
+        control.start_voice({**selection, "kind": "voice_trial"})
+    assert control.process is None
+
+
+def test_voice_transcript_is_ephemeral_and_never_added_to_room_diagnostics(
+    tmp_path, devices, selection
+):
+    worker = tmp_path / "voice.py"
+    transcript = {"type": "transcript", "text": "private", "revision": 2, "final": True}
+    result = {"kind": "voice_trial", "transcript": "private", "status": "measured"}
+    worker.write_text(
+        "import json,sys\nsys.stdin.readline()\n"
+        + f"print({json.dumps(json.dumps(transcript))}, flush=True)\n"
+        + f"print({json.dumps(json.dumps({'type': 'result', 'result': result}))}, flush=True)\n"
+    )
+    control = AudioControl(
+        discovery=lambda: (devices, []), voice_command=[sys.executable, str(worker)]
+    )
+    try:
+        control.refresh()
+        job = control.start_voice({**selection, "kind": "voice_trial"})
+        wait_until(lambda: control.job["status"] != "running")
+        assert control.poll(job["id"])["transcript"]["text"] == "private"
+        assert control.job["status"] == "completed"
+        assert not control.results and not control.diagnostics(selection)
+    finally:
+        control.close()

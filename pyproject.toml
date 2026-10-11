@@ -14,6 +14,10 @@ dependencies = [
     "pywebrtc-audio>=0.2,<0.3",
     "pycaw>=20251023; sys_platform == 'win32'",
     "platformdirs>=4.3,<5",
+    "sherpa-onnx==1.12.40",
+    "psutil>=7,<8",
+    "sherpa-onnx-core==1.12.40",
+    "soxr>=1,<2",
 ]
 
 [dependency-groups]

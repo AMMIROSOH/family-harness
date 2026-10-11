@@ -106,6 +106,7 @@ class SetupHandler(BaseHTTPRequestHandler):
                         "token": self.server.token,
                         "config": config,
                         "config_path": str(self.server.store.path),
+                        "voice": self.server.audio.models.status(),
                     },
                 )
             elif url.path == "/api/devices":
@@ -158,6 +159,8 @@ class SetupHandler(BaseHTTPRequestHandler):
             path = urlsplit(self.path).path
             if path == "/api/tests":
                 self.reply(200, self.server.audio.start(data))
+            elif path == "/api/voice":
+                self.reply(200, self.server.audio.start_voice(data))
             elif path == "/api/stop":
                 self.reply(200, self.server.audio.stop())
             elif path == "/api/config":
@@ -188,9 +191,12 @@ class SetupHandler(BaseHTTPRequestHandler):
 
 
 def create_server(
-    port: int, path: Path | None = None, audio: AudioControl | None = None
+    port: int,
+    path: Path | None = None,
+    audio: AudioControl | None = None,
+    models: Path | None = None,
 ) -> SetupServer:
-    control = audio or AudioControl()
+    control = audio or AudioControl(models=models)
     try:
         try:
             return SetupServer(
@@ -211,8 +217,13 @@ def create_server(
         ) from exc
 
 
-def serve(port: int = 8765, path: Path | None = None, open_browser: bool = True) -> None:
-    server = create_server(port, path)
+def serve(
+    port: int = 8765,
+    path: Path | None = None,
+    open_browser: bool = True,
+    models: Path | None = None,
+) -> None:
+    server = create_server(port, path, models=models)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Family Harness audio setup: {url}", flush=True)
     print(

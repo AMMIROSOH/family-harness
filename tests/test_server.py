@@ -122,3 +122,30 @@ def test_occupied_port_falls_back_to_loopback(server, tmp_path, devices):
         assert another.server_address[1] != server.server_address[1]
     finally:
         another.server_close()
+
+
+def test_voice_catalog_is_visible_without_loading_models_or_audio(server, tmp_path):
+    from family_harness.models import ModelStore
+
+    server.audio.models = ModelStore(tmp_path / "models")
+    state = json.loads(request(server, "/api/state")[2])
+    assert state["voice"]["catalog"]["id"] == "english-cpu-v2"
+    assert not state["voice"]["installed"]
+    assert not server.audio.models.root.exists()
+    assert server.audio.process is None
+
+
+@pytest.mark.parametrize("kind", ["voice_install", "voice_trial", "voice_remove", "voice_import"])
+def test_voice_actions_require_same_origin_and_token(server, kind):
+    assert request(server, "/api/voice", {"kind": kind}, {"X-Setup-Token": "wrong"})[0] == 403
+    assert (
+        request(server, "/api/voice", {"kind": kind}, {"Origin": "https://attacker.example"})[0]
+        == 403
+    )
+    assert server.audio.process is None
+
+
+@pytest.mark.parametrize("body", [{"kind": []}, {"kind": "cloud"}, {"kind": "voice_import"}])
+def test_invalid_voice_actions_do_not_start_a_worker(server, body):
+    assert request(server, "/api/voice", body)[0] == 400
+    assert server.audio.process is None

@@ -1,6 +1,6 @@
 # Milestone 1: Room Conversation Manager
 
-**Status: in progress, 2026-10-11.** M1.1 and the M1.2 audio/diagnostic foundation are implemented as a Windows WASAPI preview, with automated tests and read-only host discovery checks. The first household capture/playback trial and the acoustic exit gates remain pending. Model integration and the conversation manager do not exist yet. See [delivered behavior and validation](audio-setup.md); the remaining sections describe the planned full milestone.
+**Status: in progress, 2026-10-11.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.3 includes pinned model acquisition/import, warm loading, local VAD, streaming STT, silence completion candidates, TTS, and a bounded speech trial. Actual models have been checked with public file replay offline; household capture/playback and acoustic/voice exit gates remain pending. The room conversation manager does not exist yet. See [audio validation](audio-setup.md) and [voice-profile validation](local-voice-profile.md).
 
 ## Outcome and scope
 
@@ -72,7 +72,7 @@ flowchart TD
     Summary --> Health[Room health and repair tools]
 ```
 
-This is the complete planned journey. The preview implements room naming through saved audio choices, noise/placement checks, and duplex energy diagnostics. Models, enrollment, and room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
+This is the complete planned journey. The preview implements room naming through saved audio choices, acoustic diagnostics, English CPU model acquisition/benchmarking, and an explicit one-utterance voice test. Enrollment and room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
 
 Use ordinary labels such as "Microphone on this computer", "Use my phone", "Test speaker", and "Someone farther away cannot be heard". Keep sample rates, transport protocols, model IDs, and debug traces in advanced diagnostics.
 
@@ -89,7 +89,7 @@ Show current room, selected source, listening/test status, stop/mute controls, a
 | **M1.5 People and group turns** | Guided voice enrollment; stable person IDs; confidence/unknown states; speaker changes; configurable participation policy; attribution updates | Two enrolled people and an unknown guest can contribute sequentially; uncertain speech is not forced onto a known person |
 | **M1.6 Interruptions and milestone validation** | Immediate local output stop; generation cancellation interface; heard-so-far history; overlap recovery; resource contention and restart checks; integrated guided trial | One person can interrupt a reply and another can continue; unresolved overlap produces an understandable recovery path; setup results and performance limits are reported |
 
-**Current gate evidence:** M1.1 has simulated device, configuration, stop, reconnect, permission-error, and browser-flow checks; native read-only discovery works on the Windows development host. M1.2 has actual WebRTC processing exercised with synthetic delayed echo and a separate near signal, exact output-reference checks, clock-gap detection, bounded-buffer/drop checks, and visible diagnostic results. Neither phase is signed off on the first household's real microphone/speaker. Transcription and false interruptions cannot be validated until M1.3–M1.6 are integrated.
+**Current gate evidence:** M1.1 has simulated device, configuration, stop, reconnect, permission-error, and browser-flow checks; native read-only discovery works on the Windows development host. M1.2 has actual WebRTC processing exercised with synthetic delayed echo and a separate near signal, exact output-reference checks, clock-gap detection, bounded-buffer/drop checks, and visible diagnostic results. M1.3 has behavior tests and real-model offline file replay/synthesis with CPU/RAM measurements. None of these phases is signed off on the first household's real microphone/speaker. Live duplex transcription and false interruptions remain unvalidated.
 
 M1.1 establishes the audio endpoint interface and basic frame metadata. Later phases extend these contracts rather than replacing the configured input path. Replay fixtures make room logic testable before live recognition is reliable.
 
@@ -144,7 +144,9 @@ The first manager owns room state through a deterministic event-processing path.
 
 Participant state describes people heard in the session, not proof that nobody else is present. Joining does not authorize private memory disclosure. M1 only establishes the context and policy boundary for later memory/tool enforcement.
 
-## Candidate models, not selected dependencies
+## Initial evaluation profile and future candidates
+
+M1.3's implemented evaluation profile uses sherpa-onnx 1.12.40 and its matching core package for Silero VAD, English streaming Zipformer (2023-06-26, chunk 16 / left context 128, int8 encoder/joiner), and Piper `en_US-lessac-low`. Profile version 2 replaces the earlier 20M recognizer after replay exposed missing opening words. SoXR handles sample-rate conversion. The versioned catalog pins artifact sizes and SHA-256 checksums, and records code, voice-weight, phonemizer, and training-data license provenance separately. These choices are a working evaluation baseline, not proof of household accuracy. See the [implementation and limitations](local-voice-profile.md). Other candidates below remain unevaluated integrations.
 
 | Part | Candidate for evaluation |
 | --- | --- |

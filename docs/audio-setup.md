@@ -6,7 +6,7 @@
 
 The first target is Windows 10/11 x64 using Windows WASAPI devices. Read-only discovery was checked on the development host; capture/playback support on actual household devices remains unverified. Other OS adapters are not implemented.
 
-Run `Install-Windows.cmd` from the checkout. This explicit action acquires uv from its [official versioned installer](https://docs.astral.sh/uv/getting-started/installation/) if needed, Python 3.12 if needed, and dependencies from `uv.lock`. A fresh machine may download roughly 50–100 MB. uv installed by this script stays under `.local/tools/bin` without PATH changes; dependencies live in `.venv`. Installation does not open audio, acquire voice models, or activate a service. This bootstrap is not the full milestone's consumer installer.
+Run `Install-Windows.cmd` from the checkout. This explicit action acquires uv from its [official versioned installer](https://docs.astral.sh/uv/getting-started/installation/) if needed, Python 3.12 if needed, and dependencies from `uv.lock`. A fresh machine may download roughly 70–130 MB. uv installed by this script stays under `.local/tools/bin` without PATH changes; dependencies live in `.venv`. Installation does not open audio, acquire voice models, or activate a service. This bootstrap is not the full milestone's consumer installer.
 
 Run `Start-Setup.cmd`, or `uv run family-harness setup`. The launcher prints the actual localhost URL before opening a browser. Copy/click that address if browser launch fails. An occupied port falls back to a free loopback port. `setup --port 0` explicitly chooses a free port; `setup --no-browser` prints the URL without opening a browser. Keep the launcher window open; Ctrl+C closes setup and stops its test.
 
@@ -25,7 +25,7 @@ Duplex results compare echo-only energy before/after processing and speech-phase
 
 Stop / mute terminates the test process and releases input/output; samples already in the OS/hardware playback buffer may finish. Tests also stop on completion, device failure, shutdown, or three seconds without a browser poll (plus OS scheduling/termination time). Reconnection never restarts capture automatically. Cancelled/failed tests are not saved as completed measurements.
 
-Samples exist only in bounded process memory and are discarded. There is no recording/export endpoint, audio upload, microphone loopback monitor, or inference call. Numeric results are saved only when the user presses Save. The interface supports keyboard controls, text status, and automatic direction for names including Farsi. It does not recognize speech in any language.
+These acoustic tests keep samples in bounded process memory and discard them. There is no recording/export endpoint, audio upload, or microphone loopback monitor. Acoustic numeric results are saved only when the user presses Save. The separate [M1.3 English voice test](local-voice-profile.md) runs local inference and saves a diagnostic benchmark without its transcript. Names including Farsi use automatic text direction; Farsi speech is not supported by the evaluation profile.
 
 ## One echo cancellation owner
 
@@ -64,7 +64,7 @@ Completed results apply to their selected device IDs and echo owner; changing th
 - `audio_worker.py` re-resolves identities before one explicit test, emits numeric progress/results, closes streams, and exits. Processing accepts fake audio dependencies for tests.
 - `control.py` exposes refresh/start/poll/stop/close and supervises cancellation, deadlines, browser leases, and completed results. Reconnection requires a fresh explicit start.
 - `server.py` serves packaged assets/JSON on loopback. Host/Origin/Fetch Metadata checks, a per-launch token, bounded JSON-only bodies, no CORS, restrictive CSP, and browser microphone denial prevent unrelated pages from starting capture. It is a local single-room service, not a LAN deployment surface.
-- `config.py` owns validation and atomic writes. Recognition, identity, agents, memory, and sensitive tool permissions remain outside this implementation.
+- `config.py` owns validation and atomic writes. The [M1.3 speech modules](local-voice-profile.md#implementation) provide a separate bounded voice test. Identity, agents, memory, and sensitive tool permissions remain outside this implementation.
 
 Libraries perform native audio and AEC; Family Harness does not implement echo cancellation internals. Future adapters should extend saved endpoint identities and frame metadata instead of replacing the configured host path.
 
@@ -72,7 +72,7 @@ Libraries perform native audio and AEC; Family Harness does not implement echo c
 
 Close setup, update the checkout, inspect release changes, and rerun `Install-Windows.cmd` to sync locked dependencies. Schema 1 has no older runtime configuration to migrate; future versions require an explicit migration. Unknown schemas currently block overwriting.
 
-No models, logins, service registrations, or startup tasks are installed. To uninstall, close setup and remove this checkout's `.venv` and `.local` (or the checkout). Separately choose whether to retain/delete `%LOCALAPPDATA%/FamilyHarness/room.json`; it is not deleted automatically. A pre-existing shared uv, its cache, or Python installation need not be removed.
+The bootstrap installs no models, logins, service registrations, or startup tasks. Voice models are installed only through a separate explicit action. To uninstall, close setup and remove this checkout's `.venv` and `.local` (or the checkout). Separately choose whether to retain/delete `%LOCALAPPDATA%/FamilyHarness/room.json`, the model directory, and voice benchmark reports; they are not deleted automatically. Use the voice section's removal button to remove its profile files. A pre-existing shared uv, its cache, or Python installation need not be removed.
 
 ## Household validation trial
 
