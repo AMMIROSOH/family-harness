@@ -90,12 +90,17 @@ def main() -> None:
     )
     evaluation.add_argument(
         "--mode",
-        choices=("events", "utterances", "continuous", "recognizer", "speakers", "diarization"),
+        choices=("events", "utterances", "continuous", "recognizer", "speakers", "diarization",
+                 "interruptions"),
         default="utterances",
     )
     evaluation.add_argument("--split", choices=("all", "dev", "eval"), default="all")
     evaluation.add_argument("--file", help="Evaluate one recording filename")
     evaluation.add_argument("--limit", type=int, help="Evenly spaced utterances per speaker/file")
+    evaluation.add_argument("--vad-threshold", type=float,
+                            help="Interruption VAD threshold, 0.1-0.9")
+    evaluation.add_argument("--hold-seconds", type=float, default=0.08,
+                            help="Interruption onset hold, 0-0.5 seconds")
     evaluation.add_argument(
         "--enrollment-pairs", choices=("all", "eligible"), default="all",
         help="Keep unavailable enrollment as known errors; eligible reproduces historical scoring",
@@ -222,7 +227,8 @@ def main() -> None:
         if args.room_action == "evaluate":
             if args.limit is not None and args.mode not in ("utterances", "recognizer", "speakers"):
                 parser.error("--limit applies only to utterance or recognizer evaluation")
-            if args.seconds is not None and args.mode not in ("continuous", "diarization"):
+            if args.seconds is not None and args.mode not in ("continuous", "diarization",
+                                                              "interruptions"):
                 parser.error("--seconds applies only to continuous evaluation")
         try:
             settings = VOICE_PRESETS[getattr(args, "preset", "room")]
@@ -230,11 +236,23 @@ def main() -> None:
                 settings = replace(settings, silence=args.silence)
             if getattr(args, "gain_db", None) is not None:
                 settings = replace(settings, gain_db=args.gain_db)
+            if getattr(args, "vad_threshold", None) is not None:
+                if args.mode != "interruptions":
+                    parser.error("--vad-threshold applies only to interruption evaluation")
+                settings = replace(settings, vad_threshold=args.vad_threshold)
             if args.room_action == "evaluate":
                 from family_harness.dipco import block_network, evaluate
 
                 block_network()
-                if args.mode == "speakers":
+                if args.mode == "interruptions":
+                    from family_harness.interruption_evaluation import evaluate_interruptions
+
+                    result = evaluate_interruptions(
+                        args.dataset, args.models, settings=settings, split=args.split,
+                        filename=args.file, seconds=args.seconds, hold_seconds=args.hold_seconds,
+                        progress=lambda m: print(m, file=sys.stderr, flush=True),
+                    )
+                elif args.mode == "speakers":
                     from family_harness.identity import SherpaEmbedding
                     from family_harness.speaker_evaluation import evaluate_speakers
                     from family_harness.voice_trial import Measurements

@@ -63,6 +63,7 @@ class AudioControl:
         speaker_backend: str | None = None,
         people_command: list[str] | None = None,
         policy_file: Path | None = None,
+        interruption_command: list[str] | None = None,
     ):
         self.discovery = discovery
         self.command = command or [sys.executable, "-m", "family_harness.audio_worker", "run"]
@@ -78,6 +79,9 @@ class AudioControl:
         speaker_catalog(self.speaker_backend)
         self.people_command = people_command or [
             sys.executable, "-m", "family_harness.people_worker",
+        ]
+        self.interruption_command = interruption_command or [
+            sys.executable, "-m", "family_harness.interruption_worker",
         ]
         if recognizer not in ("zipformer", "parakeet-v2", "whisper-small-en"):
             raise ValueError("unsupported local final recognizer")
@@ -342,6 +346,31 @@ class AudioControl:
                 20,
                 600 if kind in ("voice_install", "voice_import") else 120,
             )
+
+    def start_interruption(self, data: dict) -> dict:
+        with self.lock:
+            if self.closed.is_set():
+                raise SetupError("setup_closed", "Setup is shutting down.", "Reopen setup.")
+            if self.job and self.job["status"] == "running":
+                raise SetupError("test_running", "Another setup operation is running.",
+                                 "Use Stop before starting the interruption trial.")
+            if (data.get("echo_confirmed") is not True
+                    or data.get("speaker_confirmed") is not True
+                    or data.get("echo_owner") not in ("software", "device")):
+                raise SetupError("trial_unconfirmed", "Check speaker volume and echo removal.",
+                                 "Run the speaker and duplex tests, then confirm comfortable "
+                                 "volume and exactly one echo remover in setup.")
+            resolve(self.devices, data.get("input_id"), "input")
+            resolve(self.devices, data.get("output_id"), "output")
+            request = {key: data[key] for key in (
+                "input_id", "output_id", "echo_owner", "echo_confirmed", "speaker_confirmed",
+            )}
+            request.update(kind="interruption_trial", endpoint_id=self.endpoint_id,
+                           models=str(self.models.root), people=str(self.people.path),
+                           backend=self.speaker_backend, recognizer=self.recognizer,
+                           preset=self.preset,
+                           recognition_policy=self.recognition_policies.snapshot())
+            return self._launch(request, self.interruption_command, 20, 180)
 
     def _launch(self, request: dict, command: list[str], duration: int, timeout: int) -> dict:
         with self.lock:

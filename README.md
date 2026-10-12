@@ -1,6 +1,6 @@
 # Family Harness
 
-**Under development — room-audio, local English speech, room-manager replay, and people previews.** M1.1/M1.2 audio setup and the M1.3 voice-profile foundation are implemented for Windows WASAPI: a localhost wizard, bounded audio tests, local model download/import, streaming transcription, and a fixed synthesized test response. M1.4 adds a deterministic room manager, continuous file replay, and local DiPCo evaluation. M1.5 adds local voice enrollment, uncertain speaker matching, attributed group replay, participation policies, and bounded microphone previews. Household hardware and speech/identity quality gates are still pending. Live room conversations, memory, and tools are not implemented yet.
+**Under development — room-audio, local English speech, room-manager replay, people and interruption previews.** M1.1/M1.2 audio setup and the M1.3 voice-profile foundation are implemented for Windows WASAPI: a localhost wizard, bounded audio tests, local model download/import, streaming transcription, and a fixed synthesized test response. M1.4 adds a deterministic room manager, continuous file replay, and local DiPCo evaluation. M1.5 adds local voice enrollment, uncertain speaker matching, attributed group replay, participation policies, and bounded microphone previews. Household hardware and speech/identity quality gates are still pending. M1.6 adds a bounded duplex interruption trial, cancellation and heard-chunk history. Continuous live room conversations, memory, and tools are not implemented yet.
 
 Family Harness aims to make a shared voice agent useful in everyday life. Start with a modest PC, a microphone, and a speaker: a family member calls the assistant, it recognizes an enrolled voice, and it responds using the appropriate context, memories, and tools. Other people can join, interrupt, continue, or disagree within the same conversation.
 
@@ -67,6 +67,8 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 - [Audio setup guide](docs/audio-setup.md): supported preview path, recovery, architecture choices, upgrade/uninstall, and manual validation.
 - [Local English voice profile](docs/local-voice-profile.md): model management, offline replay, warm-up, bounded voice trial, measurements, and pending hardware validation.
 - [Room manager and DiPCo evaluation](docs/room-manager.md): event contracts, lifecycle/cancellation, continuous replay, and offline speech scoring.
+- [Bounded interruptions](docs/interruptions.md): fixed voice cue, immediate cancellation, heard chunks and the integrated household trial.
+- [M1.6 DiPCo validation](docs/m16-dipco-evaluation.md): frozen onset comparisons and limits.
 - [People and group turns](docs/people-and-group-turns.md): local enrollment, identity uncertainty, participation, and bounded group previews.
 - [M1.5 DiPCo results](docs/m15-dipco-evaluation.md): real speaker-model comparisons and separate automatic-diarization validation.
 - [M1.5 speaker follow-up](docs/m15-speaker-follow-up.md): overlap repairs, faster conservative matching, fresh validation, and the remaining recall failure.
@@ -90,7 +92,7 @@ GPU profiles, cloud adapters, and additional language profiles including Farsi r
 Dataset replay measures speech and manager behavior on recorded inputs; it does not establish
 household quality or physical interruption accuracy. M1.3's hardware exit gate is pending.
 M1.4's replay foundation and M1.5's bounded people preview are implemented.
-M1.5's DiPCo quality/household gate remains pending; M1.6 remains planned.
+M1.5's DiPCo quality/household gate remains pending. M1.6's bounded interruption software preview is implemented; physical interruption and integrated household gates remain pending.
 The default people preview uses TitaNet with home matching settings. Recognition
 coverage improves over the earlier strict preview, with more false assignments;
 this is not dependable personalization. Existing WeSpeaker profiles require their

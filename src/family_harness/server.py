@@ -164,6 +164,8 @@ class SetupHandler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.audio.start_voice(data))
             elif path == "/api/people":
                 self.reply(200, self.server.audio.start_people(data))
+            elif path == "/api/interruptions":
+                self.reply(200, self.server.audio.start_interruption(data))
             elif path == "/api/recognition-policies":
                 self.reply(200, self.server.audio.save_recognition_policy(data))
             elif path == "/api/stop":

@@ -4,8 +4,8 @@
 voice similarity with explicit unknown states, attributed group WAV replay,
 participation policy, and attribution revisions are available. The localhost page
 also offers an explicit bounded enrollment and group microphone trial. Family
-Harness is still under development. Live conversations, physical interruptions,
-memory, and tools remain planned. The M1.5 household/quality exit gate is pending;
+Harness is still under development. Continuous live conversations, memory and tools remain planned.
+[M1.6](interruptions.md) adds a bounded physical interruption preview; its hardware gate remains pending. The M1.5 household/quality exit gate is pending;
 see the [current home recognition results](m15-home-recognition.md). Home defaults
 recognize more enrolled speech, with more false assignments; personalization
 quality is still insufficient.
@@ -153,7 +153,7 @@ enrolled speakers and a guest offline, at intended distances, including fast
 handovers, brief acknowledgments, uncertainty and failure recovery. Measure wrong
 person assignments separately from rejected known voices and rejected/accepted
 guests. Current DiPCo evidence does not establish dependable autonomous attribution.
-M1.6 playback interruption and integrated milestone validation are separate work.
+The [M1.6 bounded trial](interruptions.md) now adds playback cancellation and post-capture continuation analysis. Physical interruption and integrated milestone validation remain separate pending gates.
 
 ## Household quality trial
 

@@ -1,6 +1,6 @@
 # Setup experience
 
-**Status: audio setup and local English speech previews implemented.** The localhost wizard supports native audio setup plus explicit model download/import, warm-up benchmarks, and a bounded microphone-then-speaker voice test. The full conversation journey remains planned; household hardware validation is pending. See the [audio setup guide](audio-setup.md) and [voice-profile guide](local-voice-profile.md).
+**Status: audio setup and local English speech previews implemented.** The localhost wizard supports native audio setup plus explicit model download/import, warm-up benchmarks, and a bounded microphone-then-speaker voice test. M1.6 now adds the [bounded interruption trial](interruptions.md). The full continuous conversation journey remains planned; household hardware validation is pending. See the [audio setup guide](audio-setup.md) and [voice-profile guide](local-voice-profile.md).
 
 Setup is part of the product. Regular users should not need to understand audio device indices, model identifiers, sample rates, provider SDKs, or environment variables to have their first conversation.
 

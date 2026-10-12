@@ -112,6 +112,8 @@ def group_turns(
     participation="all",
     include_text=False,
     progress=None,
+    session=None,
+    time_offset=0.0,
 ):
     """Reference-free boundaries and session tracks. Output playback remains simulated."""
     samples = np.asarray(samples, np.float32)
@@ -132,8 +134,9 @@ def group_turns(
             or not math.isfinite(segment.end)
         ):
             raise ValueError("diarizer returned invalid source timestamps")
-    harness = ReplayHarness(participation=participation)
-    harness.send("session_started", 0)
+    harness = session or ReplayHarness(participation=participation)
+    if session is None:
+        harness.send("session_started", 0)
     sequence = 0
     overlap_turns = 0
     for segment, overlap in turn_regions(segments):
@@ -162,11 +165,15 @@ def group_turns(
                 "end": end,
                 "speaker_track": segment.track,
             }
-            harness.tick(end)
-            harness.send("transcript", end, data)
+            data["start"] += time_offset
+            data["end"] += time_offset
+            event_at = end + time_offset
+            if session is None:
+                harness.tick(event_at)
+            harness.send("transcript", event_at, data)
             harness.send(
                 "attribution",
-                end,
+                event_at,
                 {
                     "utterance_id": uid,
                     "revision": 1,
@@ -174,14 +181,15 @@ def group_turns(
                     "person_id": identity.person_id,
                     "score": identity.score,
                     "state": identity.state,
-                    "start": float(start),
-                    "end": end,
+                    "start": float(start) + time_offset,
+                    "end": event_at,
                     "backend": matcher.provider.backend,
                     "model_hash": matcher.provider.model_hash,
                 },
             )
             # Overlap remains visible as discarded input with a recovery message in the report.
-            harness.send("transcript", end, {**data, "revision": 2, "text": text, "final": True})
+            harness.send("transcript", event_at,
+                         {**data, "revision": 2, "text": text, "final": True})
             overlap_turns += overlap
             if progress:
                 progress(
@@ -192,10 +200,16 @@ def group_turns(
                         "duration": duration,
                     }
                 )
-    harness.tick(duration + 0.5)
-    harness.send("session_closed", duration + 0.5)
+    if session is None:
+        harness.tick(duration + time_offset + 0.5)
+    harness.send("session_closed", duration + time_offset + 0.5)
+    report = harness.report(include_text=include_text) if session is None else {
+        **harness.manager.snapshot(include_text=include_text),
+        "commands": dict(harness.commands),
+        "playback": "native fixed cue; continuation responses withheld after capture",
+    }
     return {
-        **harness.report(include_text=include_text),
+        **report,
         "audio_seconds": duration,
         "matching_settings": asdict(matcher.settings) if getattr(matcher, "settings", None)
         else None,

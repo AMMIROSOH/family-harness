@@ -1,6 +1,6 @@
 # Milestone 1: Room Conversation Manager
 
-**Status: in progress, 2026-10-12.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.4 adds the deterministic room manager, session/event contracts, response/playback state, cancellation commands, and continuous/DiPCo replay. M1.5 implements local enrollment, uncertain identity, participation policies, and bounded group previews. Household capture/playback, acoustic/voice, and speaker-quality exit gates remain pending. Live group sessions and physical interruptions remain planned. See [audio validation](audio-setup.md), [voice-profile validation](local-voice-profile.md), [room-manager evaluation](room-manager.md), and [M1.5 results](m15-dipco-evaluation.md).
+**Status: in progress, 2026-10-12.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.4 adds the deterministic room manager, session/event contracts, response/playback state, cancellation commands, and continuous/DiPCo replay. M1.5 implements local enrollment, uncertain identity, participation policies, and bounded group previews. Household capture/playback, acoustic/voice, and speaker-quality exit gates remain pending. M1.6 adds a bounded fixed-cue interruption preview and heard-chunk history. Continuous live group sessions and physical interruption quality gates remain pending. See [M1.6 implementation and trial](interruptions.md). See [audio validation](audio-setup.md), [voice-profile validation](local-voice-profile.md), [room-manager evaluation](room-manager.md), and [M1.5 results](m15-dipco-evaluation.md).
 
 ## Outcome and scope
 
@@ -117,6 +117,8 @@ Automatic boundary/track error remains high. The [M1.5 quality and household gat
 is pending; no synthetic test or reference-bounded score completes it.
 Editable [recognition presets](recognition-policies.md) expose the tradeoff through
 setup and CLI, with Balanced initially selected. They do not complete this gate.
+
+M1.6 now provides onset-driven output stop, a response-scoped generation cancellation boundary, complete heard-chunk evidence, overlap recovery, shared job/lease and restart checks, and a bounded native guided trial. [DiPCo onset validation](m16-dipco-evaluation.md) does not exercise speaker echo or physical output. The integrated hardware/quality exit gate remains pending.
 
 ### First-install packaging and operation
 

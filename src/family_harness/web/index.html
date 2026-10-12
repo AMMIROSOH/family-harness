@@ -96,7 +96,8 @@
         <button id="save" class="primary" type="submit">Save room audio setup</button>
         <div id="summary" role="status"></div>
         <p class="muted">Next, try the local English voice and people previews below. Live room
-          conversations and interruptions remain planned. Energy checks cannot verify transcription quality.</p>
+          conversations remain planned. Try the bounded interruption trial below.
+          Energy checks cannot verify transcription quality.</p>
         <details><summary>Advanced diagnostics</summary><pre id="diagnostics">No test results yet.</pre></details>
       </section>
     </form>
@@ -206,6 +207,25 @@
       <p id="people-result" role="status"></p>
       <div id="group-turns" aria-label="Attributed preview turns"></div>
       <details><summary>People preview diagnostics</summary><pre id="people-diagnostics"></pre></details>
+    </section>
+    <section class="card" aria-labelledby="interruption-heading">
+      <div class="step">08 · Bounded interruption preview</div>
+      <h2 id="interruption-heading">Interrupt the test voice.</h2>
+      <p>First test your speaker volume and duplex echo removal above. Install the English,
+        speaker and segmentation models. Enroll two consenting people to try names.
+        This trial opens the selected microphone and speaker for at most 20 seconds.</p>
+      <p>Stay quiet for two seconds. While the fixed test voice plays, one person speaks a
+        sentence to interrupt it. Let another person continue. You have eight seconds after
+        detection; speak one person at a time. Audio closes before names and text are analyzed.</p>
+      <button id="interruption-start" class="interruption-action primary" type="button">Try interruptions · up to 20 seconds</button>
+      <p id="interruption-instruction" role="status" aria-live="polite">Audio is off. Start a deliberate trial when everyone is ready.</p>
+      <progress id="interruption-progress" max="1" value="0" aria-label="Interruption trial progress"></progress>
+      <p id="interruption-result" role="status"></p>
+      <div id="interruption-turns"></div>
+      <p class="muted">Complete audio chunks confirm the heard text; an interrupted chunk stays
+        uncertain. This is a fixed cue with later group analysis. Household echo, identity
+        and physical stopping speed still need validation.</p>
+      <details><summary>Trial diagnostics · kept in this session</summary><pre id="interruption-diagnostics">No interruption trial yet.</pre></details>
     </section>
   </main>
   <footer>Local control · Windows WASAPI preview · No audio uploads or saved recordings</footer>

@@ -4,7 +4,7 @@
 provisional/final utterances, assigns response IDs, tracks playback, and cancels
 outdated work. It runs with a deterministic responder and explicit local file
 replay. M1.5 now adds [local enrollment and bounded attributed group previews](people-and-group-turns.md).
-Live room sessions and physical interruptions remain later phases. Family Harness
+[M1.6](interruptions.md) adds bounded native interruption, generation cancellation and heard-chunk history. Continuous live sessions and physical quality gates remain pending. Family Harness
 is still under development.
 
 ## Contracts and lifecycle
@@ -32,13 +32,13 @@ cancelling the current response or requesting an outdated reply.
 An empty or cancelled/gapped final cannot request output. One selected speech
 adapter owns finalization; silence candidates remain separate evidence.
 
-New final input cancels an unfinished response. Closing the session or losing
+New final input cancels an unfinished response. M1.6 also accepts `speech_started` with a `start` time to stop output before transcription or identity. Any room input gap stops output, including replies requested from a different source. Closing the session or losing
 audio discards provisional input and emits separate `cancel_generation` and
 `stop_playback` commands. Late results cannot revive a cancelled response.
 Gap watermarks reject speech that began before missing audio. Playback progress
 must be monotonic and within the response duration. Partial playback stores only
 the confirmed duration; text is marked heard only after complete playback.
-There is no word alignment or physical interruption guarantee in this phase.
+M1.6 optionally accepts complete audio chunk alignment and one terminal `playback_stopped` acknowledgment. Complete heard chunks can survive cancellation; an interrupted phrase remains uncertain. There is no word alignment or physical interruption guarantee. See the [new contracts](interruptions.md#cancellation-and-heard-history-contracts).
 
 Speaker tracks are session-local labels. The original continuous speech replay
 leaves `person_id` and `identity_confidence` unset. The separate `room group` path

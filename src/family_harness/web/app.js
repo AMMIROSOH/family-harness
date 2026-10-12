@@ -30,7 +30,7 @@ function selection() {
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll(".test, .voice-action, .people-action, .policy-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
+  document.querySelectorAll(".test, .voice-action, .people-action, .policy-action, .interruption-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
   $("people-save").disabled = value || !candidateJobId;
   $("listening").textContent = value ? "Audio test active · use Stop / mute anytime" : "Microphone off · no test running";
   if (!value) {
@@ -139,6 +139,7 @@ $("stop").addEventListener("click", async () => {
     $("voice-progress").value = 0;
     $("test-progress").value = 0;
     $("test-instruction").textContent = "Stopped. Microphone and speaker are released.";
+    $("interruption-instruction").textContent = "Stopped. Microphone and speaker are released. Start a new trial to continue.";
   } catch (error) { showError(error); }
 });
 document.querySelectorAll(".test").forEach((button) => button.addEventListener("click", () => start(button.dataset.kind)));
@@ -275,6 +276,69 @@ document.querySelectorAll(".voice-action").forEach((button) => button.addEventLi
     jobId = job.id; pollVoice(jobId);
   } catch (error) { setBusy(false); showError(error); }
 }));
+
+const interruptionInstructions = {
+  starting: "Starting the trial. Audio is off.",
+  loading: "Checking and loading local models. Audio is off.",
+  warming: "Preparing the test voice. Audio is off.",
+  quiet: "Stay quiet for two seconds. The selected microphone and speaker are on.",
+  interruption_playback: "Speak a sentence now to interrupt the test voice.",
+  interruption_continuation: "Output is stopping. Let the next person continue, one person at a time.",
+  group_decoding: "Audio is off. Analyzing the continuation locally.",
+};
+async function pollInterruption(id) {
+  try {
+    const job = await api(`/api/job?id=${encodeURIComponent(id)}`);
+    if (jobId !== id) return;
+    const p = job.progress;
+    $("interruption-instruction").textContent = interruptionInstructions[p.phase] || "Finishing the trial.";
+    $("interruption-progress").value = Math.min(1, (p.seconds || 0) / (p.duration || 1));
+    $("listening").textContent = ["quiet", "interruption_playback", "interruption_continuation"].includes(p.phase) ?
+      "Interruption trial · microphone on · Stop / mute ends the trial" : "Interruption trial · audio off";
+    if (job.status === "running") { setTimeout(() => pollInterruption(id), 250); return; }
+    jobId = null; setBusy(false);
+    $("interruption-instruction").textContent = "Trial ended. Microphone and speaker are released.";
+    if (job.status === "error") showError(job.error);
+    if (job.result) {
+      $("interruption-progress").value = 1;
+      const r = job.result;
+      $("interruption-result").textContent = `${r.interrupted ? "Speech triggered an output stop." : "No interruption detected."} ${r.recovery}`;
+      const target = $("interruption-turns"); target.replaceChildren();
+      const cue = r.group.responses?.[0];
+      if (cue) {
+        const heard = document.createElement("p");
+        heard.textContent = `Confirmed complete voice chunks: ${cue.heard_text || "None."} Played: ${cue.played_seconds.toFixed(2)} seconds. The remainder was not confirmed.`;
+        target.append(heard);
+      }
+      for (const turn of r.group.utterances || []) {
+        if (turn.utterance_id === "trial-control") continue;
+        const row = document.createElement("p");
+        const person = enrolledPeople.find((person) => person.person_id === turn.person_id);
+        row.textContent = `${person?.name || turn.speaker_track} · ${turn.identity_state}: ${turn.text || turn.recovery || "No text recognized; repeat alone."}`;
+        row.dir = "auto"; target.append(row);
+      }
+      const report = JSON.parse(JSON.stringify(r));
+      for (const turn of report.group.utterances || []) delete turn.text;
+      for (const response of report.group.responses || []) {
+        delete response.text; delete response.heard_text;
+        for (const chunk of response.alignment || []) delete chunk.text;
+      }
+      $("interruption-diagnostics").textContent = JSON.stringify(report, null, 2);
+    } else $("interruption-result").textContent = job.reason || "Trial failed. Review the recovery instructions.";
+  } catch (error) {
+    if (jobId !== id) return;
+    showError(error); jobId = null; setBusy(false);
+    $("interruption-instruction").textContent = "Connection lost. The trial stops within three seconds. Start a new trial after reconnecting.";
+  }
+}
+$("interruption-start").addEventListener("click", async () => {
+  $("error").hidden = true;
+  setBusy(true);
+  try {
+    const job = await api("/api/interruptions", selection());
+    jobId = job.id; pollInterruption(jobId);
+  } catch (error) { setBusy(false); showError(error); }
+});
 
 let candidateJobId = null, enrolledPeople = [];
 let recognitionPolicies = null;

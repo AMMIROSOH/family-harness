@@ -28,6 +28,7 @@ class RoomEvent:
             "session_started": (),
             "session_closed": (),
             "audio_gap": (),
+            "speech_started": ("start",),
             "transcript": ("utterance_id", "revision", "text", "final", "start", "end"),
             "turn_candidate": ("utterance_id", "authority"),
             "utterance_cancelled": ("utterance_id",),
@@ -37,6 +38,7 @@ class RoomEvent:
             "response_cancelled": ("response_id",),
             "playback_progress": ("response_id", "played_seconds"),
             "playback_finished": ("response_id", "played_seconds"),
+            "playback_stopped": ("response_id", "played_seconds"),
         }
         if not isinstance(self.kind, str) or self.kind not in required:
             raise ValueError("unsupported room event kind")
@@ -61,6 +63,10 @@ class RoomEvent:
             self._time(self.data["end"])
             if self.data["end"] < self.data["start"] or self.data["end"] > self.at + 1e-6:
                 raise ValueError("transcript is outside its source timeline")
+        if self.kind == "speech_started":
+            self._time(self.data["start"])
+            if self.data["start"] > self.at:
+                raise ValueError("speech onset is outside its source timeline")
         if "addressed" in self.data and type(self.data["addressed"]) is not bool:
             raise ValueError("addressed must be boolean")
         if self.kind == "attribution":
@@ -83,6 +89,26 @@ class RoomEvent:
         for key in ("duration", "played_seconds"):
             if key in self.data:
                 self._time(self.data[key])
+        if self.kind == "response_ready" and "alignment" in self.data:
+            alignment = self.data["alignment"]
+            if not isinstance(alignment, list) or not 0 < len(alignment) <= 256:
+                raise ValueError("alignment must contain bounded complete audio chunks")
+            previous = 0
+            texts = []
+            for chunk in alignment:
+                if not isinstance(chunk, dict) or set(chunk) != {"end", "text"}:
+                    raise ValueError("invalid audio chunk alignment")
+                self._time(chunk["end"])
+                if not previous < chunk["end"] <= self.data["duration"]:
+                    raise ValueError("audio chunks must be increasing and inside the response")
+                if not isinstance(chunk["text"], str) or not chunk["text"].strip():
+                    raise ValueError("aligned chunks require text")
+                previous = chunk["end"]
+                texts.append(chunk["text"])
+            if " ".join(texts) != self.data["text"]:
+                raise ValueError("alignment must describe the complete response text")
+            if not math.isclose(previous, self.data["duration"]):
+                raise ValueError("alignment must cover the complete response audio")
 
     @staticmethod
     def _time(value):
@@ -110,6 +136,7 @@ class Utterance:
     identity_model_hash: str | None = None
     identity_evidence: tuple[float, float] | None = None
     addressed: bool = False
+    recovery: str | None = None
 
 
 @dataclass
@@ -122,6 +149,9 @@ class Response:
     played_seconds: float = 0
     # Playback duration is evidence; no word alignment is implied.
     heard_text: str | None = None
+    requested_at: float = 0
+    alignment: list[dict] = field(default_factory=list)
+    playback_stopped: bool = False
 
 
 class ResponseProvider(Protocol):
@@ -157,6 +187,7 @@ class RoomManager:
         self.counts: Counter = Counter()
         self.response_sequence = 0
         self.latest_final_end = -1.0
+        self.latest_speech_start = -1.0
 
     def apply(self, event: RoomEvent) -> list[dict]:
         event.validate()
@@ -180,7 +211,18 @@ class RoomManager:
             return self._cancel(None)
         if event.kind == "audio_gap":
             self.gaps[event.source_id] = max(event.at, self.gaps.get(event.source_id, 0))
-            return self._cancel(event.source_id)
+            commands = self._cancel(event.source_id)
+            # Lost room input also stops replies triggered by another source/control.
+            return commands + self._cancel_responses()
+        if event.kind == "speech_started":
+            start = event.data["start"]
+            if start <= max(self.gaps.get(event.source_id, -1), self.latest_speech_start):
+                return self._ignore("stale_speech")
+            self.latest_speech_start = start
+            commands = self._cancel_responses(onset=start)
+            if commands:
+                self.counts["interruptions"] += 1
+            return commands
         if event.kind.startswith("response_") or event.kind.startswith("playback_"):
             return self._response(event)
         data = event.data
@@ -202,6 +244,10 @@ class RoomManager:
             turn.identity_state = data["state"]
             turn.identity_backend, turn.identity_model_hash = data["backend"], data["model_hash"]
             turn.identity_evidence = (data["start"], data["end"])
+            turn.recovery = (
+                "Overlapping voices need repetition, one person at a time."
+                if data["state"] == "overlap" else None
+            )
             self.counts["attribution_updates"] += 1
             # A later identity correction never requests another reply. It may withdraw one.
             if turn.status == "final" and not self._may_reply(turn):
@@ -257,7 +303,7 @@ class RoomManager:
             return []
         turn.status = "final"
         self.counts["final_turns"] += 1
-        if turn.end < self.latest_final_end:
+        if turn.end < max(self.latest_final_end, self.latest_speech_start):
             return self._ignore("late_final_response")
         self.latest_final_end = turn.end
         commands = self._cancel_responses()
@@ -266,11 +312,13 @@ class RoomManager:
             return commands
         self.response_sequence += 1
         rid = f"{self.session_id}:response:{self.response_sequence}"
-        self.responses[rid] = Response(rid, uid)
+        self.responses[rid] = Response(rid, uid, requested_at=event.at)
         commands.append({"kind": "response_requested", "response_id": rid, "utterance_id": uid})
         return commands
 
     def _may_reply(self, turn: Utterance) -> bool:
+        if turn.identity_state == "overlap":
+            return False
         if self.participation == "enrolled":
             return turn.person_id is not None and turn.identity_state == "matched"
         if self.participation == "addressed":
@@ -281,12 +329,12 @@ class RoomManager:
         self.counts[f"ignored_{reason}"] += 1
         return []
 
-    def _cancel_responses(self, source_id: str | None = None) -> list[dict]:
+    def _cancel_responses(self, source_id: str | None = None, *, onset=None) -> list[dict]:
         commands = []
         for response in self.responses.values():
             if response.status in ("requested", "playing") and (
                 source_id is None or self.utterances[response.utterance_id].source_id == source_id
-            ):
+            ) and (onset is None or onset >= response.requested_at):
                 response.status = "cancelled"
                 commands.extend(
                     [
@@ -305,8 +353,17 @@ class RoomManager:
     def _response(self, event: RoomEvent) -> list[dict]:
         data = event.data
         response = self.responses.get(data["response_id"])
+        if (response is not None and response.status == "cancelled"
+                and event.kind == "playback_stopped" and not response.playback_stopped
+                and response.played_seconds <= data["played_seconds"] <= response.duration):
+            response.played_seconds = data["played_seconds"]
+            response.playback_stopped = True
+            self._heard(response)
+            return []
         if response is None or response.status in ("cancelled", "completed"):
             return self._ignore("stale_response")
+        if event.kind == "playback_stopped":
+            return self._ignore("playback_progress")
         if event.kind == "response_cancelled":
             response.status = "cancelled"
             return [
@@ -317,6 +374,7 @@ class RoomManager:
             if response.status != "requested":
                 return self._ignore("stale_response")
             response.text, response.duration = data["text"], data["duration"]
+            response.alignment = data.get("alignment", [])
             response.status = "playing"
             return [{"kind": "play_response", "response_id": response.response_id}]
         played = data["played_seconds"]
@@ -328,10 +386,19 @@ class RoomManager:
         if event.kind == "playback_finished" and not math.isclose(played, response.duration):
             return self._ignore("playback_progress")
         response.played_seconds = played
+        self._heard(response)
         if event.kind == "playback_finished":
             response.status = "completed"
             response.heard_text = response.text
         return []
+
+    @staticmethod
+    def _heard(response):
+        if response.alignment:
+            response.heard_text = " ".join(
+                chunk["text"] for chunk in response.alignment
+                if chunk["end"] <= response.played_seconds
+            )
 
     def snapshot(self, *, include_text: bool = False) -> dict:
         turns, responses = [], []
@@ -345,6 +412,7 @@ class RoomManager:
             if not include_text:
                 item.pop("text")
                 item.pop("heard_text")
+                item["alignment"] = [{"end": c["end"]} for c in response.alignment]
             responses.append(item)
         return {
             "session_id": self.session_id,
