@@ -4,7 +4,8 @@
 installed/imported, loaded and warmed, and used for streaming English transcription and a fixed
 local synthesized test response. Real models were exercised with a public WAV replay while network
 access was blocked. No household microphone or speaker was activated during development validation.
-This is not a room conversation manager or a functioning home assistant.
+The native voice trial is a bounded preview, not a functioning home assistant.
+M1.4 separately provides a [room manager and continuous file replay](room-manager.md).
 
 ## Try the profile
 
@@ -45,6 +46,13 @@ does not lower the VAD threshold. The live meter shows input before adjustment, 
 and whether speech activity is currently detected. Acoustic tests retain their original signal levels.
 Gain can help quiet input; it cannot recover speech removed by a device/driver or buried in room noise.
 A directional headset boom should face the speaker when testing it off the head.
+
+Offline replay can explicitly select microphone-processing presets with
+`voice replay FILE --preset quiet-room` or `--preset quiet-close-talk`. These
+DiPCo-selected settings include fixed input gain and 900 ms completion silence;
+they do not change the wizard's baseline or Windows input settings. See the
+[evaluation protocol and limits](room-manager.md#dipco-validation). Real-room
+calibration and speaker playback validation are still required.
 
 ## Model catalog, local files, and licenses
 

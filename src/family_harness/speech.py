@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
@@ -17,6 +18,35 @@ SPEECH_RATE = 16000
 COMPLETION_SILENCE = 0.6
 RECOGNIZER_LEAD_IN = 0.8
 RESPONSE_TEXT = "The local English voice test is complete. Please check the transcript on screen."
+
+
+@dataclass(frozen=True)
+class VoiceSettings:
+    """Explicit signal/decoder choices, independent of device names and identity."""
+
+    processing: bool = True
+    decoding: str = "greedy_search"
+    silence: float = COMPLETION_SILENCE
+    vad_threshold: float = 0.5
+    gain_db: float = 0.0
+
+    def __post_init__(self):
+        if self.decoding not in ("greedy_search", "modified_beam_search"):
+            raise ValueError("unsupported speech decoder")
+        if not 0.3 <= self.silence <= 2 or not 0.1 <= self.vad_threshold <= 0.9:
+            raise ValueError("invalid speech timing or VAD threshold")
+        if not 0 <= self.gain_db <= 36:
+            raise ValueError("input gain must be between zero and 36 dB")
+
+
+VOICE_PRESETS = {
+    "room": VoiceSettings(),
+    "close-talk": VoiceSettings(processing=False),
+    "room-beam": VoiceSettings(decoding="modified_beam_search"),
+    "close-talk-beam": VoiceSettings(processing=False, decoding="modified_beam_search"),
+    "quiet-room": VoiceSettings(processing=False, gain_db=36, silence=0.9),
+    "quiet-close-talk": VoiceSettings(processing=True, gain_db=12, silence=0.9),
+}
 
 
 class ActivityDetector(Protocol):
@@ -44,7 +74,8 @@ class WebRtcSpeechInput:
     library to insert padding between live frames. Only the final tail is padded.
     """
 
-    def __init__(self):
+    def __init__(self, gain_db: float = 0):
+        self.fixed_gain_db = gain_db
         try:
             from pywebrtc_audio import AudioProcessor
 
@@ -72,6 +103,7 @@ class WebRtcSpeechInput:
     def process(self, samples: np.ndarray, flush: bool = False) -> np.ndarray:
         if len(samples):
             self.raw.add(samples)
+        samples = np.clip(samples * 10 ** (self.fixed_gain_db / 20), -1, 1)
         joined = np.concatenate((self.pending, samples))
         count = len(joined) if flush else len(joined) // 160 * 160
         self.pending = joined[count:]
@@ -88,11 +120,43 @@ class WebRtcSpeechInput:
     def diagnostics(self) -> dict:
         return {
             "processor": "WebRTC NS + AGC2 + high-pass",
+            "fixed_input_gain_db": self.fixed_gain_db,
             "max_adaptive_gain_db": 30,
             "max_observed_gain_db": round(self.max_gain_db, 1),
             "raw": self.raw.result(),
             "processed": self.clean.result(),
         }
+
+
+class GainSpeechInput:
+    """Explicit fixed microphone calibration with clipping diagnostics."""
+
+    def __init__(self, gain_db: float):
+        self.gain_db = gain_db
+        self.raw, self.clean = Levels(), Levels()
+        self.level_dbfs = -120.0
+
+    def process(self, samples: np.ndarray, flush: bool = False) -> np.ndarray:
+        if not len(samples):
+            return samples
+        self.raw.add(samples)
+        output = np.clip(samples * 10 ** (self.gain_db / 20), -1, 1)
+        self.clean.add(output)
+        self.level_dbfs = dbfs(float(np.mean(output**2)))
+        return output
+
+    def diagnostics(self):
+        return {
+            "processor": "fixed input gain + clipping guard",
+            "fixed_input_gain_db": self.gain_db,
+            "raw": self.raw.result(), "processed": self.clean.result(),
+        }
+
+
+def speech_input(settings: VoiceSettings) -> SpeechProcessor | None:
+    if settings.processing:
+        return WebRtcSpeechInput(settings.gain_db)
+    return GainSpeechInput(settings.gain_db) if settings.gain_db else None
 
 
 class SpeechTurn:
@@ -105,9 +169,12 @@ class SpeechTurn:
         emit: Callable,
         language: str = "en",
         processor: SpeechProcessor | None = None,
+        completion_silence: float = COMPLETION_SILENCE,
     ):
         self.vad, self.stt, self.emit = vad, stt, emit
         self.processor = processor
+        self.completion_silence = completion_silence
+        self.processor_origin: float | None = None
         self.processed_samples = 0
         self.speech_active = False
         self.language = language
@@ -162,8 +229,10 @@ class SpeechTurn:
         if self.ended:
             return True
         if self.processor:
+            if self.processor_origin is None:
+                self.processor_origin = start
             samples = self.processor.process(samples)
-            start = self.processed_samples / SPEECH_RATE
+            start = self.processor_origin + self.processed_samples / SPEECH_RATE
             self.processed_samples += len(samples)
         if not len(samples):
             return False
@@ -173,7 +242,7 @@ class SpeechTurn:
         if (
             self.text
             and self.last_speech is not None
-            and end - self.last_speech >= COMPLETION_SILENCE
+            and end - self.last_speech >= self.completion_silence
         ):
             self.emit(
                 {
@@ -182,7 +251,7 @@ class SpeechTurn:
                     "at": end,
                     "speech_end": self.last_speech,
                     "authority": "vad-silence",
-                    "silence_seconds": COMPLETION_SILENCE,
+                    "silence_seconds": self.completion_silence,
                 }
             )
             before = time.perf_counter()
@@ -198,7 +267,9 @@ class SpeechTurn:
             if self.processor:
                 tail = self.processor.process(np.empty(0, np.float32), flush=True)
                 if len(tail):
-                    self._recognize(tail, self.processed_samples / SPEECH_RATE)
+                    self._recognize(
+                        tail, (self.processor_origin or 0) + self.processed_samples / SPEECH_RATE
+                    )
                     self.processed_samples += len(tail)
             # No hallucinated transcript for a silent test.
             text = self.stt.finish().strip() if self.started is not None else ""
@@ -207,10 +278,10 @@ class SpeechTurn:
 
 
 class SherpaVad:
-    def __init__(self, runtime, path: Path):
+    def __init__(self, runtime, path: Path, threshold: float = 0.5):
         config = runtime.VadModelConfig()
         config.silero_vad.model = str(path)
-        config.silero_vad.threshold = 0.5
+        config.silero_vad.threshold = threshold
         config.silero_vad.min_speech_duration = 0.1
         config.silero_vad.min_silence_duration = 0.1
         config.silero_vad.max_speech_duration = 30
@@ -218,7 +289,12 @@ class SherpaVad:
         config.num_threads = 1
         config.provider = "cpu"
         self.window = config.silero_vad.window_size
-        self.detector = runtime.VoiceActivityDetector(config, buffer_size_in_seconds=30)
+        # Leave room for VAD lookahead beyond the 30-second segment limit.
+        self.detector = runtime.VoiceActivityDetector(config, buffer_size_in_seconds=32)
+        self.pending = np.empty(0, np.float32)
+
+    def reset(self) -> None:
+        self.detector.reset()
         self.pending = np.empty(0, np.float32)
 
     def accept(self, samples: np.ndarray) -> bool:
@@ -233,7 +309,7 @@ class SherpaVad:
 
 
 class SherpaStt:
-    def __init__(self, runtime, path: Path):
+    def __init__(self, runtime, path: Path, decoding: str = "greedy_search"):
         self.recognizer = runtime.OnlineRecognizer.from_transducer(
             tokens=str(path / "tokens.txt"),
             encoder=str(path / "encoder-epoch-99-avg-1-chunk-16-left-128.int8.onnx"),
@@ -242,7 +318,7 @@ class SherpaStt:
             num_threads=2,
             sample_rate=SPEECH_RATE,
             feature_dim=80,
-            decoding_method="greedy_search",
+            decoding_method=decoding,
             provider="cpu",
             enable_endpoint_detection=False,
         )
@@ -307,15 +383,18 @@ class SherpaTts:
 class LocalVoice:
     """Loads local paths only. No model SDK download helpers or network fallback."""
 
-    def __init__(self, profile: Path):
+    def __init__(self, profile: Path, settings: VoiceSettings | None = None):
+        self.settings = settings or VoiceSettings()
         try:
             import sherpa_onnx
 
             self.runtime = sherpa_onnx
-            self.vad = SherpaVad(sherpa_onnx, profile / "vad/silero_vad.onnx")
-            self.stt = SherpaStt(sherpa_onnx, profile / "stt")
+            self.vad = SherpaVad(
+                sherpa_onnx, profile / "vad/silero_vad.onnx", self.settings.vad_threshold
+            )
+            self.stt = SherpaStt(sherpa_onnx, profile / "stt", self.settings.decoding)
             self.tts = SherpaTts(sherpa_onnx, profile / "tts")
-            self.input_processor = WebRtcSpeechInput()
+            self.input_processor = speech_input(self.settings)
         except (ImportError, OSError, RuntimeError, ValueError) as exc:
             raise SetupError(
                 "voice_load_failed",
@@ -342,6 +421,11 @@ class LocalVoice:
 
     def resampler(self, rate: int, target: int = SPEECH_RATE):
         return StreamingResampler(rate, target)
+
+    def reset_input(self) -> None:
+        self.stt.reset()
+        self.vad.reset()
+        self.input_processor = speech_input(self.settings)
 
 
 class StreamingResampler:

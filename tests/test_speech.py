@@ -3,10 +3,12 @@ import pytest
 
 from family_harness.speech import (
     RECOGNIZER_LEAD_IN,
+    GainSpeechInput,
     LocalVoice,
     SherpaStt,
     SpeechTurn,
     StreamingResampler,
+    VoiceSettings,
     WebRtcSpeechInput,
 )
 
@@ -193,6 +195,26 @@ def test_empty_activity_does_not_end_trial_before_later_recognizable_speech():
             break
     assert turn.text == "hello room" and turn.ended
     assert len([e for e in events if e["type"] == "turn_candidate"]) == 1
+
+
+def test_conditioned_replay_preserves_nonzero_source_origin():
+    events = []
+    turn = SpeechTurn(FakeVad(), FakeStt(), events.append, processor=WebRtcSpeechInput())
+    turn.accept(np.zeros(160, np.float32), 12)
+    turn.finish(12.01, "replay_eof")
+    assert turn.started == 12 and turn.last_speech == pytest.approx(12.01)
+    assert events[-1]["start"] == 12
+
+
+def test_explicit_input_calibration_is_bounded_and_reports_clipping():
+    processor = GainSpeechInput(24)
+    samples = np.array([0, 0.001, 0.5], np.float32)
+    output = processor.process(samples)
+    assert output[0] == 0 and output[1] == pytest.approx(0.01584893)
+    assert output[2] == 1
+    assert processor.diagnostics()["processed"]["clipping_fraction"] == 0.33333
+    with pytest.raises(ValueError):
+        VoiceSettings(gain_db=100)
 
 
 def test_delayed_activity_confirmation_keeps_first_word_in_recognizer_input():

@@ -18,7 +18,7 @@ import psutil
 from family_harness.audio import BUFFER_FRAMES, AudioClock, AudioFrame, dbfs, format_for
 from family_harness.devices import resolve
 from family_harness.errors import SetupError
-from family_harness.speech import RESPONSE_TEXT, SPEECH_RATE, SpeechTurn
+from family_harness.speech import COMPLETION_SILENCE, RESPONSE_TEXT, SPEECH_RATE, SpeechTurn
 
 CAPTURE_SECONDS = 20
 
@@ -133,7 +133,10 @@ def capture(request: dict, devices, sd, voice, emit: Callable, metrics: Measurem
         extra_settings=sd.WasapiSettings(auto_convert=True),
         callback=transfer,
     )
-    turn = SpeechTurn(voice.vad, voice.stt, emit, processor=voice.input_processor)
+    turn = SpeechTurn(
+        voice.vad, voice.stt, emit, processor=voice.input_processor,
+        completion_silence=getattr(getattr(voice, "settings", None), "silence", COMPLETION_SILENCE),
+    )
     clock = AudioClock()
     processed = 0
     lag_ms = 0.0
@@ -176,8 +179,10 @@ def capture(request: dict, devices, sd, voice, emit: Callable, metrics: Measurem
                             "duration": CAPTURE_SECONDS,
                             "level": min(1, energy**0.5 * 10),
                             "level_dbfs": dbfs(energy),
-                            "processed_level_dbfs": voice.input_processor.level_dbfs,
-                            "gain_db": round(voice.input_processor.gain_db, 1),
+                            "processed_level_dbfs": voice.input_processor.level_dbfs
+                            if voice.input_processor else dbfs(energy),
+                            "gain_db": round(voice.input_processor.gain_db, 1)
+                            if voice.input_processor else 0,
                             "speech_active": turn.speech_active,
                         }
                     )
@@ -250,7 +255,10 @@ def replay(path: Path, voice, emit: Callable, metrics: Measurements) -> dict:
         ) from exc
     if rate != SPEECH_RATE:
         samples = np.asarray(voice.resampler(rate).resample(samples, flush=True), np.float32)
-    turn = SpeechTurn(voice.vad, voice.stt, emit, processor=voice.input_processor)
+    turn = SpeechTurn(
+        voice.vad, voice.stt, emit, processor=voice.input_processor,
+        completion_silence=getattr(getattr(voice, "settings", None), "silence", COMPLETION_SILENCE),
+    )
     processed = 0
     for offset in range(0, len(samples), 160):
         chunk = samples[offset : offset + 160]

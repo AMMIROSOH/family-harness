@@ -57,6 +57,18 @@ def test_silent_capture_is_bounded_and_has_no_completed_candidate(devices, selec
     assert result["input_levels"]["processed"]["peak"] == 0
 
 
+def test_unprocessed_input_preset_keeps_native_capture_meter_and_stop(devices, selection):
+    engine = voice()
+    engine.input_processor = None
+    sd = FakeAudio()
+    events = []
+    result = capture(
+        {**selection, "endpoint_id": "endpoint"}, devices, sd, engine, events.append, metrics()
+    )
+    assert result["candidate"] and sd.streams[0].closed
+    assert next(e for e in events if e.get("phase") == "listening")["gain_db"] == 0
+
+
 @pytest.mark.parametrize("options", [{"gap_at": 4}, {"disconnect_after": 5}])
 def test_audio_gap_or_disconnect_discards_incomplete_trial(devices, selection, options):
     sd = FakeAudio(**options)

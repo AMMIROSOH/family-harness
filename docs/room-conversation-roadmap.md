@@ -1,6 +1,6 @@
 # Milestone 1: Room Conversation Manager
 
-**Status: in progress, 2026-10-11.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.3 includes pinned model acquisition/import, warm loading, local VAD, streaming STT, silence completion candidates, TTS, and a bounded speech trial. Actual models have been checked with public file replay offline; household capture/playback and acoustic/voice exit gates remain pending. The room conversation manager does not exist yet. See [audio validation](audio-setup.md) and [voice-profile validation](local-voice-profile.md).
+**Status: in progress, 2026-10-12.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.4 adds the deterministic room manager, session/event contracts, response/playback state, cancellation commands, and continuous/DiPCo replay. Household capture/playback and acoustic/voice exit gates remain pending. Live group sessions, enrollment, and physical interruptions remain planned. See [audio validation](audio-setup.md), [voice-profile validation](local-voice-profile.md), and [room-manager evaluation](room-manager.md).
 
 ## Outcome and scope
 
@@ -72,7 +72,7 @@ flowchart TD
     Summary --> Health[Room health and repair tools]
 ```
 
-This is the complete planned journey. The preview implements room naming through saved audio choices, acoustic diagnostics, English CPU model acquisition/benchmarking, and an explicit one-utterance voice test. Enrollment and room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
+This is the complete planned journey. The wizard implements room naming through saved audio choices, acoustic diagnostics, English CPU model acquisition/benchmarking, and an explicit one-utterance voice test. M1.4 is currently available through device-free CLI replay. Enrollment and live room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
 
 Use ordinary labels such as "Microphone on this computer", "Use my phone", "Test speaker", and "Someone farther away cannot be heard". Keep sample rates, transport protocols, model IDs, and debug traces in advanced diagnostics.
 
@@ -92,6 +92,14 @@ Show current room, selected source, listening/test status, stop/mute controls, a
 **Current gate evidence:** M1.1 has simulated device, configuration, stop, reconnect, permission-error, and browser-flow checks; native read-only discovery works on the Windows development host. M1.2 has actual WebRTC processing exercised with synthetic delayed echo and a separate near signal, exact output-reference checks, clock-gap detection, bounded-buffer/drop checks, and visible diagnostic results. M1.3 has behavior tests and real-model offline file replay/synthesis with CPU/RAM measurements. None of these phases is signed off on the first household's real microphone/speaker. Live duplex transcription and false interruptions remain unvalidated.
 
 M1.1 establishes the audio endpoint interface and basic frame metadata. Later phases extend these contracts rather than replacing the configured input path. Replay fixtures make room logic testable before live recognition is reliable.
+
+M1.4's software replay exit gate passes on the supplied DiPCo subset: all 794
+eligible annotation-driven turns assemble correctly with duplicate/late-event
+and closure checks. Simulated cancellation and behavior tests cover output state.
+M1.3 speech was evaluated separately and remains poor on far microphones; a
+development-selected gain preset worsens overall held-out clip WER. See the
+[full evidence and limits](dipco-evaluation.md). Dataset replay does not complete
+household hardware, identity, or interruption gates.
 
 ### First-install packaging and operation
 

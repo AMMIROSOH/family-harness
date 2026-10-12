@@ -4,6 +4,7 @@ import argparse
 import json
 import subprocess
 import sys
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 
@@ -13,7 +14,8 @@ def main() -> None:
         prog="family-harness",
         description=(
             "Family Harness is under development. "
-            "Configure and test room audio locally. Conversations are not implemented yet."
+            "Configure room audio and replay the room manager locally. Live conversations "
+            "are not implemented yet."
         ),
     )
     parser.add_argument("--version", action="version", version=version("family-harness"))
@@ -46,6 +48,34 @@ def main() -> None:
         "--output", type=Path, help="Explicitly save the fixed TTS response as a WAV"
     )
     replay.add_argument("--report", type=Path, help="Save diagnostics without the transcript")
+    room = commands.add_parser("room", help="Replay the deterministic room manager without devices")
+    room.add_argument("--models", type=Path, help="Alternative local model directory")
+    room_actions = room.add_subparsers(dest="room_action", required=True)
+    room_replay = room_actions.add_parser("replay", help="Replay continuous WAV or JSONL events")
+    room_replay.add_argument("input", type=Path)
+    room_replay.add_argument("--events", action="store_true", help="Read common event envelopes")
+    room_replay.add_argument("--report", type=Path, help="Save a text-free replay report")
+    evaluation = room_actions.add_parser("evaluate", help="Evaluate a local DiPCo subset offline")
+    evaluation.add_argument(
+        "dataset", type=Path, help="Folder with DiPCo WAVs and annotation JSONs"
+    )
+    evaluation.add_argument(
+        "--mode", choices=("events", "utterances", "continuous"), default="utterances"
+    )
+    evaluation.add_argument("--split", choices=("all", "dev", "eval"), default="all")
+    evaluation.add_argument("--file", help="Evaluate one recording filename")
+    evaluation.add_argument("--limit", type=int, help="Evenly spaced utterances per speaker/file")
+    evaluation.add_argument(
+        "--report", type=Path, required=True, help="Save text-free measurements"
+    )
+    from family_harness.speech import VOICE_PRESETS
+
+    replay.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
+    for action in (room_replay, evaluation):
+        action.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
+        action.add_argument("--silence", type=float, help="Completion silence, 0.3-2 seconds")
+        action.add_argument("--gain-db", type=float, help="Explicit fixed input gain, 0-36 dB")
+        action.add_argument("--seconds", type=float, help="Replay only this continuous WAV prefix")
     args = parser.parse_args()
     if args.command == "setup":
         if not 0 <= args.port <= 65535:
@@ -57,6 +87,73 @@ def main() -> None:
             serve(args.port, args.config, not args.no_browser, args.models)
         except SetupError as exc:
             parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
+    elif args.command == "room":
+        from family_harness.errors import SetupError
+        from family_harness.models import ModelStore
+        from family_harness.room_replay import replay_events, replay_wav
+        from family_harness.speech import LocalVoice
+
+        if getattr(args, "limit", None) is not None and args.limit < 1:
+            parser.error("--limit must be positive")
+        if args.seconds is not None and not 0 < args.seconds <= 3600:
+            parser.error("--seconds must be between zero and 3600")
+        if args.room_action == "evaluate":
+            if args.limit is not None and args.mode != "utterances":
+                parser.error("--limit applies only to utterance evaluation")
+            if args.seconds is not None and args.mode != "continuous":
+                parser.error("--seconds applies only to continuous evaluation")
+        try:
+            settings = VOICE_PRESETS[args.preset]
+            if args.silence is not None:
+                settings = replace(settings, silence=args.silence)
+            if args.gain_db is not None:
+                settings = replace(settings, gain_db=args.gain_db)
+            if args.room_action == "evaluate":
+                from family_harness.dipco import block_network, evaluate
+
+                block_network()
+                result = evaluate(
+                    args.dataset,
+                    args.models,
+                    mode=args.mode,
+                    settings=settings,
+                    split=args.split,
+                    filename=args.file,
+                    limit=args.limit,
+                    seconds=args.seconds,
+                    progress=lambda message: print(message, file=sys.stderr, flush=True),
+                )
+            elif args.events:
+                result = replay_events(args.input)
+            else:
+                store = ModelStore(args.models)
+                store.verify()
+                voice = LocalVoice(store.profile, settings)
+                voice.warm()
+                result = replay_wav(args.input, voice, seconds=args.seconds)
+            if args.report:
+                args.report.parent.mkdir(parents=True, exist_ok=True)
+                temporary = args.report.with_suffix(".tmp")
+                temporary.write_text(json.dumps(result, indent=2, allow_nan=False), "utf-8")
+                temporary.replace(args.report)
+            summary = dict(result)
+            if "recordings" in summary:
+                summary["recordings"] = [
+                    {**r, "score": {k: v for k, v in r["score"].items() if k != "rows"}}
+                    for r in summary["recordings"]
+                ]
+            else:
+                summary.pop("utterances", None)
+                summary.pop("responses", None)
+            print(json.dumps(summary, indent=2, ensure_ascii=True))
+        except SetupError as exc:
+            parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
+        except ImportError:
+            parser.exit(1, "Install evaluation dependencies with uv sync --extra evaluation.\n")
+        except (OSError, ValueError, KeyError, TypeError, RuntimeError) as exc:
+            parser.exit(1, f"Room replay failed: {exc}. Check the local files and options.\n")
+        except KeyboardInterrupt:
+            parser.exit(1, "Room replay stopped. Audio devices were not opened.\n")
     elif args.command == "voice":
         from family_harness.models import ModelStore
 
@@ -81,6 +178,7 @@ def main() -> None:
                 )
         if args.voice_action == "replay":
             request["source"] = str(args.input)
+            request["preset"] = args.preset
             if args.output:
                 request["output"] = str(args.output)
         if getattr(args, "report", None):

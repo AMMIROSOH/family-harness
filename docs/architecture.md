@@ -1,6 +1,6 @@
 # Architecture direction
 
-**Status: partially implemented.** The Windows native audio endpoint, local room configuration, localhost setup/control boundary, and local English speech-profile test exist as previews. Identity, conversation, and agent boundaries remain proposed. Speech detection, streaming recognition, synthesis, and model management are integrated for one bounded test utterance; no agent backend or room manager exists.
+**Status: partially implemented.** The Windows native audio endpoint, local room configuration, localhost setup/control boundary, local English speech-profile test, and deterministic room manager exist as previews. Speech detection, streaming recognition, synthesis, and model management are integrated for one bounded native test utterance and continuous file replay. The room manager processes common events and provider commands without an LLM. Identity, live group sessions, memory, and agent integration remain proposed. See the [M1.4 contracts and evaluation](room-manager.md).
 
 The first milestone is the [Room Conversation Manager](room-conversation-roadmap.md), beginning with localhost audio setup and the [English CPU profile](local-voice-profile.md). Hardware exit gates remain pending. See the [audio implementation notes](audio-setup.md#implementation-boundaries) for delivered contracts and limitations.
 

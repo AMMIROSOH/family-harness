@@ -33,7 +33,7 @@ def execute(request: dict, send=emit) -> dict:
     if kind == "voice_remove":
         store.remove()
         return {"kind": kind, "status": "removed"}
-    from family_harness.speech import LocalVoice
+    from family_harness.speech import VOICE_PRESETS, LocalVoice
     from family_harness.voice_trial import Measurements, capture, playback, replay, synthesize
 
     measurements = Measurements()
@@ -41,10 +41,17 @@ def execute(request: dict, send=emit) -> dict:
         send({"type": "progress", "phase": "loading", "seconds": 0, "duration": 1})
         before = time.perf_counter()
         store.verify()
-        voice = LocalVoice(store.profile)
+        if "preset" in request:
+            voice = LocalVoice(store.profile, VOICE_PRESETS[request["preset"]])
+        else:
+            voice = LocalVoice(store.profile)
         result = {"kind": kind, "load_seconds": round(time.perf_counter() - before, 3)}
         send({"type": "progress", "phase": "warming", "seconds": 0, "duration": 1})
         result.update(voice.warm())
+        if "preset" in request:
+            from dataclasses import asdict
+
+            result["speech_settings"] = asdict(voice.settings)
         if kind == "voice_trial":
             import sounddevice as sd
 
