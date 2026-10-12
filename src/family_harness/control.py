@@ -62,6 +62,7 @@ class AudioControl:
         people: Path | None = None,
         speaker_backend: str | None = None,
         people_command: list[str] | None = None,
+        policy_file: Path | None = None,
     ):
         self.discovery = discovery
         self.command = command or [sys.executable, "-m", "family_harness.audio_worker", "run"]
@@ -70,6 +71,9 @@ class AudioControl:
         from family_harness.identity import DEFAULT_BACKEND, PeopleStore, speaker_catalog
 
         self.people = PeopleStore(people)
+        from family_harness.recognition_policy import RecognitionPolicies
+
+        self.recognition_policies = RecognitionPolicies(policy_file)
         self.speaker_backend = speaker_backend or DEFAULT_BACKEND
         speaker_catalog(self.speaker_backend)
         self.people_command = people_command or [
@@ -127,10 +131,41 @@ class AudioControl:
     def people_status(self) -> dict:
         from family_harness.identity import segmentation_store, speaker_store
 
+        policies = self.recognition_policies.public()
         return {"people": self.people.public(), "path": str(self.people.path),
                 "backend": self.speaker_backend,
+                "recognition_policies": policies,
+                "recognition_policy": policies["active"],
+                "matching_settings": policies["active"]["settings"],
                 "speaker_model": speaker_store(self.speaker_backend, self.models.root).status(),
                 "segmentation_model": segmentation_store(self.models.root).status()}
+
+    def save_recognition_policy(self, data: dict) -> dict:
+        from family_harness.identity import MatchSettings
+        from family_harness.recognition_policy import policy_error
+
+        with self.lock:
+            if self.closed.is_set() or (self.job and self.job["status"] == "running"):
+                raise SetupError(
+                    "test_running", "Stop the current operation before editing policies.",
+                    "Use Stop, then save recognition settings.",
+                )
+            try:
+                if data.get("action") == "save":
+                    settings = data["settings"]
+                    if not isinstance(settings, dict) or set(settings) != {
+                        "threshold", "margin", "minimum_seconds"
+                    }:
+                        raise ValueError("invalid policy settings")
+                    MatchSettings(**settings)
+                    self.recognition_policies.update(data["name"], select=True, **settings)
+                elif data.get("action") == "reset":
+                    self.recognition_policies.reset(data["name"])
+                else:
+                    raise ValueError("invalid policy action")
+            except (ValueError, TypeError, KeyError) as exc:
+                raise policy_error("Choose a valid recognition preset and settings.") from exc
+            return self.recognition_policies.public()
 
     def start_people(self, data: dict) -> dict:
         from family_harness.identity import VoiceProfile
@@ -190,6 +225,8 @@ class AudioControl:
                     raise SetupError("participation_invalid", "Choose a participation policy.",
                                      "Use the participation selector.")
                 request.update(participation=policy, recognizer=self.recognizer)
+                # Freeze the saved settings for this job, including cross-process CLI edits.
+                request["recognition_policy"] = self.recognition_policies.snapshot()
             return self._launch(request, self.people_command, 18 if kind == "people_enroll" else 30,
                                 600 if kind.endswith("install") else 180)
 

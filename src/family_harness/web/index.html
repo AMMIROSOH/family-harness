@@ -161,13 +161,34 @@
       <label>Person's name<input id="person-name" maxlength="120" dir="auto" placeholder="Name"></label>
       <label class="check"><input id="person-consent" type="checkbox">This person agrees to record and save a local voice profile.</label>
       <p>Speak alone, in a quiet room. In each six-second window, say a different sentence lasting at
-        least two seconds. First describe your room, then an activity you enjoy, then a plan for tomorrow.
+        least four seconds. First describe your room, then an activity you enjoy, then a plan for tomorrow.
         Wait for the phrase number below. Review the result and explicitly save it, or record again.</p>
       <div class="actions">
         <button class="people-action primary" data-action="people_enroll" type="button">Record three phrases · microphone on for 18 seconds</button>
         <button id="people-save" type="button" disabled>Save this voice profile</button>
       </div>
       <div id="people-list" aria-label="Enrolled people"></div>
+      <label for="recognition-policy">Voice recognition policy</label>
+      <select id="recognition-policy">
+        <option value="free">Free · recognize more voices, with more mistakes</option>
+        <option value="balanced">Balanced · current home preview default</option>
+        <option value="strict">Strict · accept fewer uncertain names</option>
+      </select>
+      <p id="policy-description"></p>
+      <p id="policy-status" class="muted" role="status"></p>
+      <details><summary>Customize this recognition preset</summary>
+        <p>Lower similarity and a smaller gap accept more names. Higher values reject more.
+          Similarity is a comparison score, not a probability of being correct.</p>
+        <label>Minimum voice similarity (0–1)<input id="policy-threshold" type="number" min="0" max="1" step="0.005" required></label>
+        <label>Required gap from the next person (0–1)<input id="policy-margin" type="number" min="0" max="1" step="0.005" required></label>
+        <label>Minimum speech duration in seconds (0.5–5)<input id="policy-minimum" type="number" min="0.5" max="5" step="0.1" required></label>
+      </details>
+      <div class="actions">
+        <button id="policy-save" class="policy-action" type="button">Save and use this policy</button>
+        <button id="policy-reset" class="policy-action" type="button">Restore this preset's defaults</button>
+      </div>
+      <p class="muted">Policies apply to the next trial. Unknown, ambiguous and overlapping voices
+        can remain unnamed in every preset. Voice recognition never grants permissions.</p>
       <label>Who gets a test response?<select id="participation">
         <option value="all">Everyone, including unknown guests</option>
         <option value="enrolled">Matched enrolled voices</option>

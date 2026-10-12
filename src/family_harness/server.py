@@ -164,6 +164,8 @@ class SetupHandler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.audio.start_voice(data))
             elif path == "/api/people":
                 self.reply(200, self.server.audio.start_people(data))
+            elif path == "/api/recognition-policies":
+                self.reply(200, self.server.audio.save_recognition_policy(data))
             elif path == "/api/stop":
                 self.reply(200, self.server.audio.stop())
             elif path == "/api/config":
@@ -202,9 +204,11 @@ def create_server(
     preset: str = "room",
     people: Path | None = None,
     speaker_backend: str | None = None,
+    policy_file: Path | None = None,
 ) -> SetupServer:
     control = audio or AudioControl(models=models, recognizer=recognizer, preset=preset,
-                                    people=people, speaker_backend=speaker_backend)
+                                    people=people, speaker_backend=speaker_backend,
+                                    policy_file=policy_file)
     try:
         try:
             return SetupServer(
@@ -234,9 +238,10 @@ def serve(
     preset: str = "room",
     people: Path | None = None,
     speaker_backend: str | None = None,
+    policy_file: Path | None = None,
 ) -> None:
     server = create_server(port, path, models=models, recognizer=recognizer, preset=preset,
-                           people=people, speaker_backend=speaker_backend)
+                           people=people, speaker_backend=speaker_backend, policy_file=policy_file)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Family Harness audio setup: {url}", flush=True)
     print(

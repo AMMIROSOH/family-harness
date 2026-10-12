@@ -30,7 +30,7 @@ function selection() {
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll(".test, .voice-action, .people-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
+  document.querySelectorAll(".test, .voice-action, .people-action, .policy-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
   $("people-save").disabled = value || !candidateJobId;
   $("listening").textContent = value ? "Audio test active · use Stop / mute anytime" : "Microphone off · no test running";
   if (!value) {
@@ -277,7 +277,45 @@ document.querySelectorAll(".voice-action").forEach((button) => button.addEventLi
 }));
 
 let candidateJobId = null, enrolledPeople = [];
+let recognitionPolicies = null;
+const policyDescriptions = {
+  free: "Free favors recognizing enrolled voices. Guests and similar voices are more likely to get a wrong name.",
+  balanced: "Balanced uses the current home preview settings. Recognition still needs improvement and household testing.",
+  strict: "Strict requires stronger voice similarity. Enrolled people will more often remain unknown."
+};
+function fillPolicy(name) {
+  const settings = recognitionPolicies.policies[name];
+  $("policy-threshold").value = settings.threshold;
+  $("policy-margin").value = settings.margin;
+  $("policy-minimum").value = settings.minimum_seconds;
+  const customized = Object.keys(settings).some((key) => settings[key] !== recognitionPolicies.defaults[name][key]);
+  $("policy-description").textContent = policyDescriptions[name] +
+    (customized ? " This preset has custom settings; its behavior may differ from these defaults." : "");
+}
+function renderPolicies(state, displayed = state.selected) {
+  recognitionPolicies = state;
+  $("recognition-policy").value = displayed;
+  fillPolicy(displayed);
+  $("policy-status").textContent = `Active policy: ${state.selected}. Save to apply any changes to the next trial.`;
+}
+$("recognition-policy").addEventListener("change", () => fillPolicy($("recognition-policy").value));
+document.querySelectorAll(".policy-action").forEach((button) => button.addEventListener("click", async () => {
+  $("error").hidden = true;
+  const name = $("recognition-policy").value, action = button.id === "policy-reset" ? "reset" : "save";
+  if (action === "save" && !["policy-threshold", "policy-margin", "policy-minimum"].every((id) => $(id).reportValidity())) return;
+  const settings = {threshold: Number($("policy-threshold").value), margin: Number($("policy-margin").value),
+                    minimum_seconds: Number($("policy-minimum").value)};
+  setBusy(true);
+  try {
+    const state = await api("/api/recognition-policies", {action, name, settings});
+    renderPolicies(state, name);
+    $("policy-status").textContent = action === "save" ? `Saved and active: ${name}. Applies to the next trial.` :
+      `Restored ${name}. Active policy: ${state.selected}.`;
+  } catch (error) { showError(error); }
+  finally { setBusy(false); }
+}));
 function renderPeople(state) {
+  renderPolicies(state.recognition_policies);
   enrolledPeople = state.people;
   const size = (state.speaker_model.download_bytes / 2**20).toFixed(1);
   $("speaker-install").textContent = `Download speaker model · ${size} MiB`;

@@ -15,6 +15,7 @@ from family_harness.audio import BUFFER_FRAMES, AudioClock, AudioFrame, dbfs, fo
 from family_harness.devices import resolve
 from family_harness.errors import SetupError, audio_error
 from family_harness.identity import (
+    MatchSettings,
     PeopleStore,
     SherpaEmbedding,
     VoiceMatcher,
@@ -128,8 +129,10 @@ def enrollment_takes(samples, diarizer):
             start, end = max(segment.start, take * 6), min(segment.end, (take + 1) * 6)
             if end > start:
                 pieces.append(samples[int(start * SPEECH_RATE) : int(end * SPEECH_RATE)])
-        if not pieces or sum(len(p) for p in pieces) < 2 * SPEECH_RATE:
-            raise ValueError("say a longer phrase in each of the three six-second windows")
+        if not pieces or sum(len(p) for p in pieces) < 4 * SPEECH_RATE:
+            raise ValueError(
+                "speak for at least four seconds in each of the three six-second windows"
+            )
         takes.append(np.concatenate(pieces))
     return takes
 
@@ -162,7 +165,9 @@ def execute(request, send=emit):
         diarizer = SherpaDiarizer(backend, root)
         recognizer, matcher = None, None
         if kind == "people_trial":
-            matcher = VoiceMatcher(provider, PeopleStore(Path(request["people"])).load())
+            policy = request["recognition_policy"]
+            matcher = VoiceMatcher(provider, PeopleStore(Path(request["people"])).load(),
+                                   MatchSettings(**policy["settings"]))
             from family_harness.asr import StreamingUtteranceRecognizer, load_recognizer
             from family_harness.models import ModelStore
 
@@ -208,6 +213,7 @@ def execute(request, send=emit):
         else:
             result = {
                 "kind": kind,
+                "recognition_policy": policy,
                 **group_turns(
                     samples,
                     diarizer,

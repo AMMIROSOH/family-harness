@@ -97,17 +97,25 @@ def main() -> None:
     evaluation.add_argument("--file", help="Evaluate one recording filename")
     evaluation.add_argument("--limit", type=int, help="Evenly spaced utterances per speaker/file")
     evaluation.add_argument(
+        "--enrollment-pairs", choices=("all", "eligible"), default="all",
+        help="Keep unavailable enrollment as known errors; eligible reproduces historical scoring",
+    )
+    evaluation.add_argument(
+        "--enrollment-seconds", type=int, choices=(6, 12, 18), default=12,
+        help="Speaker evaluation enrollment per person; 6 reproduces the earlier protocol",
+    )
+    evaluation.add_argument(
+        "--enrollment-regions", choices=("clean", "utterances"), default="clean",
+        help="Use clean portions for enrollment; utterances reproduces the earlier method",
+    )
+    evaluation.add_argument(
         "--report", type=Path, required=True, help="Save text-free measurements"
     )
-    from family_harness.identity import DEFAULT_BACKEND
+    from family_harness.identity import DEFAULT_BACKEND, speaker_backends
 
-    backends = ("wespeaker-resnet34", "wespeaker-campplus", "wespeaker-resnet293")
+    backends = speaker_backends()
     for action in (setup, group, evaluation):
         action.add_argument("--speaker-backend", choices=backends, default=DEFAULT_BACKEND)
-    for key, default in (("threshold", 0.3), ("margin", 0.08), ("minimum-seconds", 0.7)):
-        evaluation.add_argument(
-            "--" + key, type=float, default=default, help="Advanced speaker matching setting"
-        )
     people = commands.add_parser(
         "people", help="Explicit local voice enrollment and model management"
     )
@@ -116,6 +124,8 @@ def main() -> None:
         "--people", type=Path, help="Local embedding file; keep outside source control"
     )
     people.add_argument("--backend", choices=backends, default=DEFAULT_BACKEND)
+    for action in (setup, room, people):
+        action.add_argument("--policy-file", type=Path, help="Local editable recognition policies")
     people_actions = people.add_subparsers(dest="people_action", required=True)
     people_actions.add_parser("list", help="List enrolled people without loading models")
     people_actions.add_parser("status", help="Inspect speaker and segmentation installation")
@@ -138,6 +148,28 @@ def main() -> None:
         "identify", help="Match a single-speaker WAV or return unknown"
     )
     identify.add_argument("input", type=Path)
+    policies = people_actions.add_parser(
+        "policies", help="Manage Free, Balanced and Strict recognition"
+    )
+    policy_actions = policies.add_subparsers(dest="policy_action", required=True)
+    policy_actions.add_parser("list", help="Show saved policies without loading models")
+    policy_actions.add_parser("reset-all", help="Restore all presets and select Balanced")
+    for name in ("select", "update", "reset"):
+        action = policy_actions.add_parser(name, help=f"{name.title()} one recognition preset")
+        action.add_argument("name", choices=("free", "balanced", "strict"))
+        if name == "update":
+            for key in ("threshold", "margin", "minimum-seconds"):
+                action.add_argument("--" + key, type=float)
+    for action in (evaluation, group, identify):
+        action.add_argument(
+            "--policy", choices=("free", "balanced", "strict"),
+            help="Use this saved preset for this run; otherwise use the saved selection",
+        )
+        for key in ("threshold", "margin", "minimum-seconds"):
+            action.add_argument(
+                "--" + key, type=float,
+                help="Advanced override for this run; saved recognition policy is unchanged",
+            )
     from family_harness.speech import VOICE_PRESETS
 
     setup.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
@@ -171,6 +203,7 @@ def main() -> None:
                 args.preset,
                 args.people,
                 args.speaker_backend,
+                args.policy_file,
             )
         except SetupError as exc:
             parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
@@ -202,26 +235,29 @@ def main() -> None:
 
                 block_network()
                 if args.mode == "speakers":
-                    from family_harness.identity import MatchSettings, SherpaEmbedding
+                    from family_harness.identity import SherpaEmbedding
                     from family_harness.speaker_evaluation import evaluate_speakers
                     from family_harness.voice_trial import Measurements
 
                     metrics = Measurements()
+                    policy, match_settings = selected_policy(args)
                     try:
                         result = evaluate_speakers(
                             args.dataset,
                             SherpaEmbedding(args.speaker_backend, args.models),
                             split=args.split,
                             limit=args.limit,
-                            settings=MatchSettings(
-                                args.threshold, args.margin, args.minimum_seconds
-                            ),
+                            settings=match_settings,
                             filename=args.file,
+                            enrollment_pairs=args.enrollment_pairs,
+                            enrollment_seconds=args.enrollment_seconds,
+                            enrollment_regions=args.enrollment_regions,
                             progress=lambda m: print(m, file=sys.stderr, flush=True),
                         )
                     finally:
                         measurements = metrics.finish()
                     result["measurements"] = measurements
+                    result["recognition_policy"] = policy
                 elif args.mode == "diarization":
                     from family_harness.speaker_evaluation import evaluate_diarization
 
@@ -256,8 +292,12 @@ def main() -> None:
                     read_voice_wav,
                 )
 
+                policy, match_settings = selected_policy(args)
                 provider = SherpaEmbedding(args.speaker_backend, args.models)
-                matcher = VoiceMatcher(provider, PeopleStore(args.people).load())
+                matcher = VoiceMatcher(
+                    provider, PeopleStore(args.people).load(),
+                    match_settings,
+                )
                 diarizer = SherpaDiarizer(args.speaker_backend, args.models)
                 if args.recognizer == "zipformer":
                     store = ModelStore(args.models)
@@ -272,6 +312,7 @@ def main() -> None:
                     recognizer,
                     participation=args.participation,
                 )
+                result["recognition_policy"] = policy
             elif args.events:
                 result = replay_events(args.input, participation=args.participation)
             else:
@@ -381,6 +422,18 @@ def main() -> None:
         parser.print_help()
 
 
+def selected_policy(args):
+    from family_harness.identity import MatchSettings
+    from family_harness.recognition_policy import RecognitionPolicies
+
+    snapshot = RecognitionPolicies(args.policy_file).snapshot(
+        getattr(args, "policy", None), threshold=getattr(args, "threshold", None),
+        margin=getattr(args, "margin", None),
+        minimum_seconds=getattr(args, "minimum_seconds", None),
+    )
+    return snapshot, MatchSettings(**snapshot["settings"])
+
+
 def run_people(args, parser):
     from family_harness.errors import SetupError
     from family_harness.identity import (
@@ -392,6 +445,7 @@ def run_people(args, parser):
         segmentation_store,
         speaker_store,
     )
+    from family_harness.recognition_policy import RecognitionPolicies
 
     try:
         store = PeopleStore(args.people)
@@ -399,10 +453,29 @@ def run_people(args, parser):
         if action == "list":
             result = store.public()
         elif action == "status":
+            policy, _ = selected_policy(args)
             result = {
+                "matching_settings": policy["settings"], "recognition_policy": policy,
+                "recognition_policies": RecognitionPolicies(args.policy_file).public(),
                 "speaker_model": speaker_store(args.backend, args.models).status(),
                 "segmentation_model": segmentation_store(args.models).status(),
             }
+        elif action == "policies":
+            policies = RecognitionPolicies(args.policy_file)
+            if args.policy_action == "select":
+                policies.select(args.name)
+            elif args.policy_action == "update":
+                changes = {key: getattr(args, key) for key in
+                           ("threshold", "margin", "minimum_seconds")
+                           if getattr(args, key) is not None}
+                if not changes:
+                    raise ValueError("choose at least one setting to update")
+                policies.update(args.name, **changes)
+            elif args.policy_action == "reset":
+                policies.reset(args.name)
+            elif args.policy_action == "reset-all":
+                policies.reset_all()
+            result = policies.public()
         elif action == "remove":
             store.remove(args.person_id)
             result = {"status": "removed"}
@@ -447,6 +520,8 @@ def run_people(args, parser):
                 raise ValueError("speaker model operation could not finish")
             result = results[-1]
         else:
+            if action == "identify":
+                policy, settings = selected_policy(args)
             provider = SherpaEmbedding(args.backend, args.models)
             if action == "enroll":
                 profile, quality = enrollment(
@@ -462,9 +537,13 @@ def run_people(args, parser):
             else:
                 from dataclasses import asdict
 
-                result = asdict(
-                    VoiceMatcher(provider, store.load()).identify(read_voice_wav(args.input))
-                )
+                result = {
+                    **asdict(VoiceMatcher(provider, store.load(), settings).identify(
+                        read_voice_wav(args.input)
+                    )),
+                    "matching_settings": asdict(settings),
+                    "recognition_policy": policy,
+                }
         print(json.dumps(result, indent=2, ensure_ascii=True))
     except SetupError as exc:
         parser.exit(1, f"{exc.message}\n{exc.recovery}\n")

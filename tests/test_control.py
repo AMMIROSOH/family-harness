@@ -44,6 +44,21 @@ def test_people_enrollment_requires_consent_and_has_no_output_device(control):
     assert "name" not in control.start_people({"kind": "speaker_install"})
 
 
+def test_group_job_freezes_saved_policy_and_edits_wait_for_stop(control):
+    control._launch = lambda request, *args: request
+    control.save_recognition_policy({"action": "save", "name": "free",
+                                    "settings": {"threshold": 0.15, "margin": 0.04,
+                                                 "minimum_seconds": 0.7}})
+    request = control.start_people({"kind": "people_trial", "input_id": "mic"})
+    assert request["recognition_policy"]["name"] == "free"
+    control.recognition_policies.select("strict")  # Another process can edit after dispatch.
+    assert request["recognition_policy"]["settings"]["threshold"] == 0.15
+    control.job = {"id": "trial", "status": "running", "request": request}
+    with pytest.raises(SetupError, match="Stop"):
+        control.save_recognition_policy({"action": "reset", "name": "strict"})
+    control.job["status"] = "completed"
+
+
 def test_candidate_vectors_are_private_until_explicit_save(control, tmp_path):
     from dataclasses import asdict
     from uuid import uuid4

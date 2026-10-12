@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 import wave
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from importlib.resources import files
 from pathlib import Path
 from typing import Protocol
@@ -18,7 +18,7 @@ from family_harness.errors import SetupError
 from family_harness.models import ModelStore
 from family_harness.speech import SPEECH_RATE, StreamingResampler
 
-DEFAULT_BACKEND = "wespeaker-resnet293"
+DEFAULT_BACKEND = "titanet-large"
 
 
 def speaker_catalog(backend: str = DEFAULT_BACKEND) -> dict:
@@ -28,8 +28,17 @@ def speaker_catalog(backend: str = DEFAULT_BACKEND) -> dict:
     return catalog["profiles"][backend]
 
 
+def speaker_backends() -> tuple[str, ...]:
+    catalog = json.loads(
+        files("family_harness").joinpath("speaker_catalog.json").read_text("utf-8")
+    )
+    return tuple(catalog["profiles"])
+
+
 def speaker_store(backend=DEFAULT_BACKEND, root=None) -> ModelStore:
-    return ModelStore(root, manifest=speaker_catalog(backend), prepare=prepare_wespeaker)
+    manifest = speaker_catalog(backend)
+    prepare = prepare_wespeaker if manifest.get("preparation") else None
+    return ModelStore(root, manifest=manifest, prepare=prepare)
 
 
 def prepare_wespeaker(content: Path):
@@ -279,6 +288,7 @@ def enrollment(provider, samples, name: str, *, person_id=None) -> tuple[VoicePr
     profile.validate()
     return profile, {
         "phrases": len(vectors),
+        "phrase_seconds": [round(len(s) / SPEECH_RATE, 3) for s in samples],
         "minimum_similarity": round(min(similarities), 4),
         "mean_similarity": round(float(np.mean(similarities)), 4),
     }
@@ -292,11 +302,27 @@ class MatchSettings:
 
     def __post_init__(self):
         if (
-            not 0 <= self.threshold <= 1
+            any(type(value) not in (int, float)
+                for value in (self.threshold, self.margin, self.minimum_seconds))
+            or not 0 <= self.threshold <= 1
             or not 0 <= self.margin <= 1
             or not 0.5 <= self.minimum_seconds <= 5
         ):
             raise ValueError("invalid speaker matching settings")
+
+
+def matching_settings(backend, *, threshold=None, margin=None, minimum_seconds=None):
+    # Home preview: restore recognition coverage; uncertainty still uses a runner-up margin.
+    # Development sessions S02/S04/S05/S09/S10. Strict TitaNet remains an explicit override.
+    base = MatchSettings()
+    overrides = {
+        name: value
+        for name, value in (
+            ("threshold", threshold), ("margin", margin), ("minimum_seconds", minimum_seconds)
+        )
+        if value is not None
+    }
+    return replace(base, **overrides)
 
 
 @dataclass(frozen=True)
@@ -309,7 +335,7 @@ class IdentityDecision:
 
 class VoiceMatcher:
     def __init__(self, provider, profiles, settings=None):
-        self.provider, self.settings = provider, settings or MatchSettings()
+        self.provider, self.settings = provider, settings or matching_settings(provider.backend)
         self.profiles = list(profiles)
         if len(self.profiles) > 64 or len({p.person_id for p in self.profiles}) != len(
             self.profiles
@@ -334,7 +360,7 @@ class VoiceMatcher:
         score = max(-1.0, min(1.0, score))
         if score < self.settings.threshold:
             return IdentityDecision(None, score, margin, "unknown")
-        if margin < self.settings.margin:
+        if margin <= 0 or margin < self.settings.margin:
             return IdentityDecision(None, score, margin, "ambiguous")
         return IdentityDecision(person_id, score, margin, "matched")
 

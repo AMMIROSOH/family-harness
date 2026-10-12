@@ -92,6 +92,84 @@
         "onnx": "1.19.1",
         "reference": "https://github.com/wenet-e2e/wespeaker/blob/master/wespeaker/bin/infer_onnx.py"
       }
+    },
+    "titanet-large": {
+      "id": "speaker-titanet-large-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "titanet-large",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "CC-BY-4.0",
+        "attribution": "NVIDIA TitaNet-Large",
+        "source": "https://huggingface.co/nvidia/speakerverification_en_titanet_large"
+      },
+      "assets": [
+        {
+          "name": "nemo_en_titanet_large.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/nemo_en_titanet_large.onnx",
+          "size": 101405493,
+          "sha256": "d51abcf31717ef28162f26acb9d44dd4127c3d44c9b8624f699f3425daca8e77"
+        }
+      ]
+    },
+    "3dspeaker-campplus": {
+      "id": "speaker-3dspeaker-campplus-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "3dspeaker-campplus",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "attribution": "3D-Speaker CAM++",
+        "source": "https://modelscope.cn/models/iic/speech_campplus_sv_en_voxceleb_16k"
+      },
+      "assets": [
+        {
+          "name": "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx",
+          "size": 29596978,
+          "sha256": "357a834f702b80161e5b981182c038e18553c1f2ca752ed6cec2052365d4129b"
+        }
+      ]
+    },
+    "3dspeaker-eres2net": {
+      "id": "speaker-3dspeaker-eres2net-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "3dspeaker-eres2net",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "Apache-2.0",
+        "attribution": "3D-Speaker ERes2Net",
+        "source": "https://modelscope.cn/models/iic/speech_eres2net_sv_en_voxceleb_16k"
+      },
+      "assets": [
+        {
+          "name": "3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_sv_en_voxceleb_16k.onnx",
+          "size": 26485263,
+          "sha256": "c59158379255ad66e161679cca6af8d52d51e389e3224ab7d7a7baae295c2db5"
+        }
+      ]
     }
   }
 }

@@ -1,5 +1,11 @@
 # M1.5 DiPCo speaker evaluation, 2026-10-12
 
+**Historical first study.** The [speaker follow-up](m15-speaker-follow-up.md)
+records additional data, repairs, fresh S01/S07 validation, and the current
+conservative TitaNet preview. The [home tuning study](m15-home-recognition.md)
+records the current defaults. The measurements and defaults below describe the
+earlier ResNet293 configuration; the quality gate remains pending.
+
 M1.5's software preview implements local enrollment and attributed group turns.
 **The quality and household exit gate remains pending.** The preceding
 [ASR accuracy study](dipco-accuracy.md) improved transcript finals, but its speaker
@@ -127,10 +133,10 @@ additional scored meeting result.
 ## Reproduction and evidence
 
 ```sh
-uv run family-harness people --models .local/m14-models status
-uv run family-harness room --models .local/m14-models evaluate E:/Datasets/DiPCo --mode speakers --split eval --report .local/m15/speakers.json
-uv run family-harness room --models .local/m14-models evaluate E:/Datasets/DiPCo --mode diarization --split eval --seconds 60 --report .local/m15/diarization.json
-uv run family-harness setup --models .local/m14-models --people .local/my-people.json --recognizer parakeet-v2
+uv run family-harness people --models .local/m14-models --backend wespeaker-resnet293 status
+uv run family-harness room --models .local/m14-models evaluate E:/Datasets/DiPCo --mode speakers --speaker-backend wespeaker-resnet293 --threshold 0.3 --margin 0.08 --minimum-seconds 0.7 --enrollment-seconds 6 --enrollment-regions utterances --enrollment-pairs eligible --split eval --file S06_U04.CH1.wav --report .local/m15/reproduced-S06.json
+uv run family-harness room --models .local/m14-models evaluate E:/Datasets/DiPCo --mode diarization --speaker-backend wespeaker-resnet293 --split eval --file S06_U04.CH1.wav --seconds 60 --report .local/m15/diarization-S06.json
+uv run family-harness setup --models .local/m14-models --people .local/my-people.json --speaker-backend wespeaker-resnet293 --recognizer parakeet-v2
 ```
 
 Evaluations block outbound sockets. Models must be explicitly installed/imported

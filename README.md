@@ -69,6 +69,8 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 - [Room manager and DiPCo evaluation](docs/room-manager.md): event contracts, lifecycle/cancellation, continuous replay, and offline speech scoring.
 - [People and group turns](docs/people-and-group-turns.md): local enrollment, identity uncertainty, participation, and bounded group previews.
 - [M1.5 DiPCo results](docs/m15-dipco-evaluation.md): real speaker-model comparisons and separate automatic-diarization validation.
+- [M1.5 speaker follow-up](docs/m15-speaker-follow-up.md): overlap repairs, faster conservative matching, fresh validation, and the remaining recall failure.
+- [M1.5 home recognition tuning](docs/m15-home-recognition.md): current home defaults, longer enrollment, clean enrollment portions, and recall/error tradeoffs.
 - [Product direction](docs/vision.md): scope and principles for a global solution.
 - [Architecture direction](docs/architecture.md): proposed boundaries and conversation behavior.
 - [Setup experience](docs/setup-experience.md): tools needed to make installation approachable.
@@ -89,5 +91,13 @@ Dataset replay measures speech and manager behavior on recorded inputs; it does 
 household quality or physical interruption accuracy. M1.3's hardware exit gate is pending.
 M1.4's replay foundation and M1.5's bounded people preview are implemented.
 M1.5's DiPCo quality/household gate remains pending; M1.6 remains planned.
+The default people preview uses TitaNet with home matching settings. Recognition
+coverage improves over the earlier strict preview, with more false assignments;
+this is not dependable personalization. Existing WeSpeaker profiles require their
+explicit backend or deliberate reenrollment in a separate people file. See the
+[current results and enrollment instructions](docs/m15-home-recognition.md).
+Editable [Free, Balanced and Strict recognition policies](docs/recognition-policies.md)
+are available in setup and CLI. Balanced is the initial selection; all presets
+can return unknown and none grants permissions.
 
 Prioritize a working, understandable experience in one room before expanding to multiple rooms or advanced orchestration.

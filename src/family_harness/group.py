@@ -26,6 +26,24 @@ class DiarizationProvider(Protocol):
     def segments(self, samples: np.ndarray) -> list[SpeakerSegment]: ...
 
 
+def turn_regions(segments: list[SpeakerSegment]) -> list[tuple[SpeakerSegment, bool]]:
+    """Keep clean speech around an overlap instead of discarding its entire track segment."""
+    boundaries = sorted({t for s in segments for t in (s.start, s.end)})
+    regions = []
+    for start, end in zip(boundaries, boundaries[1:], strict=False):
+        tracks = sorted({s.track for s in segments if s.start < end and s.end > start})
+        if not tracks:
+            continue
+        overlap = len(tracks) > 1
+        track = "+".join(tracks) if overlap else tracks[0]
+        if regions and regions[-1][0].track == track and regions[-1][1] == overlap \
+                and regions[-1][0].end == start:
+            prior, _ = regions.pop()
+            start = prior.start
+        regions.append((SpeakerSegment(start, end, track), overlap))
+    return regions
+
+
 class SherpaDiarizer:
     def __init__(self, backend, root=None, *, threshold=0.9):
         import sherpa_onnx as sherpa
@@ -118,11 +136,7 @@ def group_turns(
     harness.send("session_started", 0)
     sequence = 0
     overlap_turns = 0
-    for segment in segments:
-        overlap = any(
-            s.track != segment.track and s.start < segment.end and s.end > segment.start
-            for s in segments
-        )
+    for segment, overlap in turn_regions(segments):
         # Long segments are bounded before ASR/identity. Tracks remain session-local.
         for start in np.arange(segment.start, segment.end, 28):
             end = min(float(start) + 28, segment.end)
@@ -132,7 +146,13 @@ def group_turns(
             sequence += 1
             uid = f"group-{sequence}"
             identity = matcher.identify(chunk, overlap=overlap)
-            text = recognizer.decode(speaker_audio(chunk, minimum=0.01)) if not overlap else ""
+            conditioned = None
+            if not overlap:
+                try:
+                    conditioned = speaker_audio(chunk, minimum=0.01)
+                except ValueError:
+                    pass
+            text = recognizer.decode(conditioned) if conditioned is not None else ""
             data = {
                 "utterance_id": uid,
                 "revision": 1,
@@ -177,6 +197,8 @@ def group_turns(
     return {
         **harness.report(include_text=include_text),
         "audio_seconds": duration,
+        "matching_settings": asdict(matcher.settings) if getattr(matcher, "settings", None)
+        else None,
         "segments": [asdict(s) for s in segments],
         "overlap_turns": overlap_turns,
         "recovery": "Overlapping voices need repetition, one person at a time."

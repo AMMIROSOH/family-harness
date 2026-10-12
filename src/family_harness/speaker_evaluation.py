@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import itertools
+import json
 import math
 import time
 import wave
@@ -13,19 +14,67 @@ from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 
-from family_harness.dipco import inventory, read_utterance, select_rows
+from family_harness.dipco import Annotation, inventory, read_utterance, select_rows, timestamp
 from family_harness.errors import SetupError
-from family_harness.identity import MatchSettings, VoiceMatcher, enrollment
+from family_harness.identity import VoiceMatcher, enrollment, matching_settings
 from family_harness.models import digest
 from family_harness.speech import SPEECH_RATE
 
 
-def enrollment_plan(item, seconds=6):
+def clean_enrollment_regions(item):
+    """Supervised clean portions, accounting for even excluded other-speaker annotations."""
+    raw = json.loads(item["annotations_path"].read_text("utf-8"))
+    if not isinstance(raw, list) or not 0 < len(raw) <= 10000:
+        raise ValueError("invalid enrollment annotations")
+    eligible = {r.index for r in item["rows"]}
+    events = {}
+    for index, row in enumerate(raw):
+        start = timestamp(row["start_time"][item["microphone"]])
+        end = timestamp(row["end_time"][item["microphone"]])
+        if end < start:
+            raise ValueError("annotation end precedes start")
+        if end == start:
+            continue
+        events.setdefault(start, []).append((row["speaker_id"], index, 1))
+        events.setdefault(end, []).append((row["speaker_id"], index, -1))
+    boundaries = sorted(events)
+    active, anchors, regions = Counter(), {}, []
+    for start, end in zip(boundaries, boundaries[1:], strict=False):
+        for speaker, index, change in events[start]:
+            active[speaker] += change
+            if not active[speaker]:
+                del active[speaker]
+            if index in eligible:
+                own = anchors.setdefault(speaker, set())
+                own.add(index) if change > 0 else own.discard(index)
+        if len(active) != 1:
+            continue
+        speaker = next(iter(active))
+        if not anchors.get(speaker):
+            continue
+        index = min(anchors[speaker])
+        if regions and regions[-1].speaker == speaker and regions[-1].end == start:
+            prior = regions.pop()
+            start, index = prior.start, prior.index
+        regions.append(Annotation(index, speaker, start, end, ""))
+    # Bound training reads even if adjacent annotations form a long monologue.
+    return [
+        Annotation(r.index, r.speaker, float(start), min(float(start) + 28, r.end), "")
+        for r in regions
+        for start in np.arange(r.start, r.end, 28)
+        if min(float(start) + 28, r.end) - start >= 0.7
+    ]
+
+
+def enrollment_plan(item, seconds=6, *, regions="utterances"):
     """First available clean speech, fixed before extracting or scoring embeddings."""
+    if regions not in ("clean", "utterances"):
+        raise ValueError("choose clean regions or whole utterances for enrollment")
+    rows = clean_enrollment_regions(item) if regions == "clean" else item["rows"]
     plan = {}
     for speaker in sorted({r.speaker for r in item["rows"]}):
         chosen, duration = [], 0.0
-        for row in item["rows"]:
+        for row in rows:
             if row.speaker != speaker or row.overlap or row.end - row.start < 0.7:
                 continue
             chosen.append(row)
@@ -36,8 +85,13 @@ def enrollment_plan(item, seconds=6):
     return plan
 
 
-def probe_recording(item, provider, *, limit=None, progress=None):
-    plan = enrollment_plan(item)
+def probe_recording(item, provider, *, limit=None, progress=None, enrollment_pairs="all",
+                    enrollment_seconds=6, enrollment_regions="utterances"):
+    if enrollment_pairs not in ("all", "eligible"):
+        raise ValueError("choose all intended participants or eligible enrollment pairs")
+    if type(enrollment_seconds) is not int or enrollment_seconds not in (6, 12, 18):
+        raise ValueError("choose 6, 12 or 18 enrollment seconds per person")
+    plan = enrollment_plan(item, enrollment_seconds, regions=enrollment_regions)
     protected = [r for rows in plan.values() for r in rows]
     # Also exclude other-speaker clips intersecting enrollment audio, plus a 1s guard.
     test = [
@@ -53,8 +107,10 @@ def probe_recording(item, provider, *, limit=None, progress=None):
     with wave.open(str(item["path"])) as recording:
         for speaker, chosen in plan.items():
             samples = np.concatenate([read_utterance(recording, r) for r in chosen])
-            # Exactly three 2-second takes; annotation labels only supply enrollment supervision.
-            takes = [samples[i * SPEECH_RATE * 2 : (i + 1) * SPEECH_RATE * 2] for i in range(3)]
+            # Three equal takes; annotation labels supply enrollment supervision only.
+            size = SPEECH_RATE * (enrollment_seconds // 3)
+            takes = [samples[i * size : (i + 1) * size] for i in range(3)]
+            audio_seconds += enrollment_seconds
             try:
                 profile, quality = enrollment(
                     provider,
@@ -67,7 +123,14 @@ def probe_recording(item, provider, *, limit=None, progress=None):
                 diagnostics[speaker] = {"enrollment_failed": True}
                 continue
             profiles[speaker], diagnostics[speaker] = profile, quality
-            audio_seconds += 6
+        if enrollment_pairs == "all":
+            for speaker in sorted({r.speaker for r in item["rows"]} - profiles.keys()):
+                profiles[speaker] = None
+                diagnostics[speaker] = {
+                    "enrollment_failed": True,
+                    "reason": "insufficient_clean_enrollment",
+                    "required_seconds": enrollment_seconds,
+                }
         for row in test:
             samples = read_utterance(recording, row)
             vector = None
@@ -96,6 +159,10 @@ def probe_recording(item, provider, *, limit=None, progress=None):
         "rows": rows,
         "quality": diagnostics,
         "enrollment_indices": {s: [r.index for r in chosen] for s, chosen in plan.items()},
+        "enrollment_intervals": {
+            s: [{"start": r.start, "end": r.end, "reference_annotation": r.index} for r in chosen]
+            for s, chosen in plan.items()
+        },
         "excluded_enrollment_or_guard": len(item["rows"])
         - len(
             [
@@ -136,7 +203,7 @@ def speaker_counts(rows):
 
 
 def score_probe(probe, provider, settings=None):
-    settings = settings or MatchSettings()
+    settings = settings or matching_settings(provider.backend)
     profiles = probe["profiles"]
     if len(profiles) < 2:
         raise ValueError("this recording has insufficient clean enrollment speech for two people")
@@ -179,6 +246,7 @@ def score_probe(probe, provider, settings=None):
         "overlap": speaker_counts([r for r in results if r["overlap"]]),
         "unique_test_annotations": len(probe["rows"]),
         "enrollment_indices": probe["enrollment_indices"],
+        "enrollment_intervals": probe.get("enrollment_intervals"),
         "enrollment_quality": probe["quality"],
         "excluded_enrollment_or_guard": probe["excluded_enrollment_or_guard"],
         "rows": results,
@@ -194,8 +262,11 @@ def evaluate_speakers(
     settings=None,
     progress=None,
     filename=None,
+    enrollment_pairs="all",
+    enrollment_seconds=12,
+    enrollment_regions="clean",
 ):
-    settings = settings or MatchSettings()
+    settings = settings or matching_settings(provider.backend)
     recordings = []
     before = time.perf_counter()
     for item in inventory(dataset):
@@ -205,7 +276,10 @@ def evaluate_speakers(
             or (filename and item["path"].name != filename)
         ):
             continue
-        probe = probe_recording(item, provider, limit=limit, progress=progress)
+        probe = probe_recording(item, provider, limit=limit, progress=progress,
+                                enrollment_pairs=enrollment_pairs,
+                                enrollment_seconds=enrollment_seconds,
+                                enrollment_regions=enrollment_regions)
         recordings.append(
             {
                 "file": item["path"].name,
@@ -228,9 +302,16 @@ def evaluate_speakers(
         "model_sha256": provider.model_hash,
         "source_model_sha256": getattr(provider, "source_model_hash", None),
         "settings": asdict(settings),
-        "enrollment_seconds_per_person": 6,
+        "enrollment_seconds_per_person": enrollment_seconds,
+        "enrollment_regions": enrollment_regions,
         "enrollment_guard_seconds": 1,
-        "pair_policy": "all eligible two-person pairs; repeated trials are not unique sentences",
+        "pair_policy": (
+            "all intended two-person pairs, including unavailable enrollment; "
+            "repeated trials are not unique sentences"
+            if enrollment_pairs == "all"
+            else "all eligible two-person pairs; repeated trials are not unique sentences"
+        ),
+        "enrollment_pairs": enrollment_pairs,
         "split": split,
         "limit": limit,
         "recordings": recordings,

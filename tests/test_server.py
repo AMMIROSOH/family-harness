@@ -83,6 +83,25 @@ def test_people_route_is_authenticated_and_read_state_excludes_vectors(server):
     assert server.audio.process is None
 
 
+def test_recognition_policies_are_authenticated_persistent_and_do_not_start_audio(server):
+    path = "/api/recognition-policies"
+    change = {"action": "save", "name": "free",
+              "settings": {"threshold": 0.15, "margin": 0.04, "minimum_seconds": 1.2}}
+    assert request(server, path, change, {"X-Setup-Token": "wrong"})[0] == 403
+    assert request(server, path, change, {"Origin": "https://attacker.example"})[0] == 403
+    assert request(server, path, change)[0] == 200
+    state = json.loads(request(server, "/api/state")[2])["people"]
+    assert state["recognition_policy"]["name"] == "free"
+    assert state["matching_settings"]["minimum_seconds"] == 1.2
+    before = server.audio.recognition_policies.path.read_bytes()
+    for bad in ([], {"threshold": True}, {"threshold": 0.2, "permission": "tools"}):
+        assert request(server, path, {**change, "settings": bad})[0] == 400
+    assert server.audio.recognition_policies.path.read_bytes() == before
+    assert request(server, path, {"action": "reset", "name": "free"})[0] == 200
+    assert server.audio.recognition_policies.snapshot()["settings"]["threshold"] == 0.2
+    assert server.audio.process is None and server.audio.job is None
+
+
 def test_save_reload_does_not_start_audio(server, selection):
     assert request(server, "/api/devices")[0] == 200
     status, _, body = request(server, "/api/config", selection)

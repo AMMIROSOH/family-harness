@@ -106,10 +106,17 @@ household hardware, identity, or interruption gates.
 
 M1.5's bounded software preview is implemented. Behavior checks exercise two known
 people, an unknown contributor, fast handover, attribution corrections, participation,
-and lifecycle/privacy. Real DiPCo speaker matching selects ResNet293 with corrected
-feature normalization, then reaches 58.8% frozen validation balanced accuracy.
-Automatic boundary/track error remains high. The [M1.5 quality and household gate](m15-dipco-evaluation.md)
+and lifecycle/privacy. The initial ResNet293 study reaches 58.8% frozen validation
+balanced accuracy. The [speaker follow-up](m15-speaker-follow-up.md) fixes overlap
+handling and selects faster conservative TitaNet matching: fresh S01/S07 guest
+rejection is 99.6%, but known recall is only 5.1% and assigned precision 89.9%.
+The [home tuning follow-up](m15-home-recognition.md) restores recognition coverage
+and improves supervised enrollment. Shared S01/S07 recall rises from 4.9% to 27.0%,
+with guest rejection 85.0% and assigned precision 55.8%; this still falls short.
+Automatic boundary/track error remains high. The [M1.5 quality and household gate](m15-speaker-follow-up.md)
 is pending; no synthetic test or reference-bounded score completes it.
+Editable [recognition presets](recognition-policies.md) expose the tradeoff through
+setup and CLI, with Balanced initially selected. They do not complete this gate.
 
 ### First-install packaging and operation
 
