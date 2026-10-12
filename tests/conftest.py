@@ -10,6 +10,13 @@ import pytest
 from family_harness.devices import Device
 
 
+@pytest.fixture(autouse=True)
+def isolated_local_data(tmp_path, monkeypatch):
+    # Behavior checks never inspect a household's installed models or enrolled voices.
+    monkeypatch.setattr("family_harness.models.default_model_path", lambda: tmp_path / "models")
+    monkeypatch.setattr("family_harness.identity.user_data_path", lambda *a, **k: tmp_path)
+
+
 @pytest.fixture
 def devices():
     return [

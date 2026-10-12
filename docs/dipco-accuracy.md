@@ -205,7 +205,8 @@ family-harness setup --models .local/m14-models --recognizer parakeet-v2
 
 The high-gain preset is for similarly quiet recordings. Inspect clipping and
 near/far recognition before using it with a device. It never changes Windows
-input volume. Additional samples live in `.local/asr-study/dipco-extra`; change
-the dataset path to evaluate S06/P25. Models, audio, per-row numerical reports,
+input volume. All six recordings and their annotations now live in
+`E:/Datasets/DiPCo`, including the additional S06/P25/S09 samples. Models, audio,
+per-row numerical reports,
 and transcripts are not committed. This study stops at bounded validation and
 does not advance M1.5 or mark household exit gates complete.

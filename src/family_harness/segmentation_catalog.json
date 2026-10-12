@@ -1,0 +1,25 @@
+{
+  "id": "speaker-segmentation-v1",
+  "version": 1,
+  "execution": "cpu",
+  "sample_rate": 16000,
+  "components": {
+    "segmentation": "pyannote segmentation-3.0",
+    "runtime": "sherpa-onnx 1.12.40"
+  },
+  "license": {
+    "weights": "MIT",
+    "source": "https://huggingface.co/pyannote/segmentation-3.0",
+    "attribution": "pyannote.audio, Severin Baroudi; sherpa-onnx ONNX conversion"
+  },
+  "assets": [
+    {
+      "name": "sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+      "destination": "segmentation",
+      "archive_prefix": "sherpa-onnx-pyannote-segmentation-3-0",
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2",
+      "size": 6958444,
+      "sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488"
+    }
+  ]
+}

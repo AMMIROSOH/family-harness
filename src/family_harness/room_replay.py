@@ -17,8 +17,9 @@ from family_harness.speech import SPEECH_RATE, SpeechTurn, replay_tail_seconds
 class ReplayHarness:
     """Simulated playback progress is distinct from actual speaker evidence."""
 
-    def __init__(self, session_id="replay", room_id="replay-room", responder=None):
-        self.manager = RoomManager(session_id, room_id)
+    def __init__(self, session_id="replay", room_id="replay-room", responder=None,
+                 participation="all"):
+        self.manager = RoomManager(session_id, room_id, participation=participation)
         self.responder = responder or DeterministicResponder()
         self.sequence = 0
         self.commands: Counter = Counter()
@@ -80,7 +81,7 @@ class ReplayHarness:
         }
 
 
-def replay_events(path: Path) -> dict:
+def replay_events(path: Path, *, participation="all") -> dict:
     harness = None
     count = 0
     with path.open(encoding="utf-8") as stream:
@@ -91,7 +92,7 @@ def replay_events(path: Path) -> dict:
                 raise ValueError("event replay exceeds its bounds")
             event = RoomEvent(**json.loads(line))
             if harness is None:
-                harness = ReplayHarness(event.session_id)
+                harness = ReplayHarness(event.session_id, participation=participation)
             harness.apply(event)
             count += 1
     if harness is None or harness.manager.status != "closed":

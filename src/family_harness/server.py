@@ -107,6 +107,7 @@ class SetupHandler(BaseHTTPRequestHandler):
                         "config": config,
                         "config_path": str(self.server.store.path),
                         "voice": self.server.audio.voice_status(),
+                        "people": self.server.audio.people_status(),
                     },
                 )
             elif url.path == "/api/devices":
@@ -161,6 +162,8 @@ class SetupHandler(BaseHTTPRequestHandler):
                 self.reply(200, self.server.audio.start(data))
             elif path == "/api/voice":
                 self.reply(200, self.server.audio.start_voice(data))
+            elif path == "/api/people":
+                self.reply(200, self.server.audio.start_people(data))
             elif path == "/api/stop":
                 self.reply(200, self.server.audio.stop())
             elif path == "/api/config":
@@ -197,8 +200,11 @@ def create_server(
     models: Path | None = None,
     recognizer: str = "zipformer",
     preset: str = "room",
+    people: Path | None = None,
+    speaker_backend: str | None = None,
 ) -> SetupServer:
-    control = audio or AudioControl(models=models, recognizer=recognizer, preset=preset)
+    control = audio or AudioControl(models=models, recognizer=recognizer, preset=preset,
+                                    people=people, speaker_backend=speaker_backend)
     try:
         try:
             return SetupServer(
@@ -226,8 +232,11 @@ def serve(
     models: Path | None = None,
     recognizer: str = "zipformer",
     preset: str = "room",
+    people: Path | None = None,
+    speaker_backend: str | None = None,
 ) -> None:
-    server = create_server(port, path, models=models, recognizer=recognizer, preset=preset)
+    server = create_server(port, path, models=models, recognizer=recognizer, preset=preset,
+                           people=people, speaker_backend=speaker_backend)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Family Harness audio setup: {url}", flush=True)
     print(

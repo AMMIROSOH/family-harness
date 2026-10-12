@@ -18,6 +18,7 @@ dependencies = [
     "psutil>=7,<8",
     "sherpa-onnx-core==1.12.40",
     "soxr>=1,<2",
+    "onnx==1.19.1",
 ]
 
 [dependency-groups]

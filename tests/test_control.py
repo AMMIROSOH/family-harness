@@ -34,6 +34,55 @@ def wait_until(predicate, timeout=3):
     raise AssertionError("timed out")
 
 
+def test_people_enrollment_requires_consent_and_has_no_output_device(control):
+    control._launch = lambda request, *args: request
+    with pytest.raises(SetupError, match="confirm consent"):
+        control.start_people({"kind": "people_enroll", "input_id": "mic", "name": "Name"})
+    request = control.start_people({"kind": "people_enroll", "input_id": "mic",
+                                    "name": "Name", "consent": True})
+    assert request["kind"] == "people_enroll" and "output_id" not in request
+    assert "name" not in control.start_people({"kind": "speaker_install"})
+
+
+def test_candidate_vectors_are_private_until_explicit_save(control, tmp_path):
+    from dataclasses import asdict
+    from uuid import uuid4
+
+    from family_harness.identity import PeopleStore, VoiceProfile
+
+    control.people = PeopleStore(tmp_path / "people.json")
+    candidate = VoiceProfile(str(uuid4()), "Name", "fake", "a" * 64, [1, 0], 3)
+    control.job = {"id": "take", "status": "completed", "request": {"kind": "people_enroll"},
+                   "result": {"candidate": asdict(candidate), "saved": False}}
+    assert "candidate" not in control.poll("take")["result"]
+    assert not control.people.path.exists()
+    with pytest.raises(SetupError):
+        control.start_people({"kind": "people_save", "job_id": "stale"})
+    control.start_people({"kind": "people_save", "job_id": "take"})
+    assert control.people.load()[0].person_id == candidate.person_id
+    assert "candidate" not in control.job["result"]
+    assert not control.diagnostics({})
+
+
+def test_stop_discards_unsaved_enrollment(control):
+    control.job = {"id": "take", "status": "completed", "request": {"kind": "people_enroll"},
+                   "result": {"candidate": {"private": "vector"}}}
+    assert "candidate" not in control.stop()["result"]
+    with pytest.raises(SetupError):
+        control.start_people({"kind": "people_save", "job_id": "take"})
+
+
+def test_people_worker_obeys_same_shared_stop_and_browser_lease(control):
+    control.people_command = control.command
+    job = control.start_people({"kind": "people_enroll", "input_id": "mic",
+                                "name": "Name", "consent": True})
+    with pytest.raises(SetupError, match="operation"):
+        control.start_people({"kind": "people_remove", "person_id": "any"})
+    wait_until(lambda: control.job["status"] == "cancelled")
+    assert control.process.poll() is not None
+    assert control.poll(job["id"])["status"] == "cancelled"
+
+
 def test_stop_terminates_audio_process(control, selection):
     job = control.start({**selection, "kind": "microphone"})
     process = control.process

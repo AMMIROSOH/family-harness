@@ -27,9 +27,12 @@ def main() -> None:
     )
     setup.add_argument("--config", type=Path, help="Alternative room configuration file")
     setup.add_argument("--models", type=Path, help="Alternative local model directory")
+    setup.add_argument("--people", type=Path, help="Local enrolled voice profiles")
     setup.add_argument(
-        "--recognizer", choices=("zipformer", "parakeet-v2", "whisper-small-en"),
-        default="zipformer", help="Local final recognizer for deliberate voice trials",
+        "--recognizer",
+        choices=("zipformer", "parakeet-v2", "whisper-small-en"),
+        default="zipformer",
+        help="Local final recognizer for deliberate voice trials",
     )
     voice = commands.add_parser("voice", help="Manage and benchmark the local English CPU profile")
     voice.add_argument("--models", type=Path, help="Alternative local model directory")
@@ -64,12 +67,31 @@ def main() -> None:
     room_replay.add_argument("input", type=Path)
     room_replay.add_argument("--events", action="store_true", help="Read common event envelopes")
     room_replay.add_argument("--report", type=Path, help="Save a text-free replay report")
+    room_replay.add_argument(
+        "--participation",
+        choices=("all", "enrolled", "addressed"),
+        default="all",
+        help="Response policy for event fixtures",
+    )
+    group = room_actions.add_parser("group", help="Bounded offline attributed group WAV replay")
+    group.add_argument("input", type=Path)
+    group.add_argument("--people", type=Path)
+    group.add_argument("--seconds", type=float, help="Use this prefix, at most 300 seconds")
+    group.add_argument("--report", type=Path, help="Save a report without transcripts")
+    group.add_argument("--participation", choices=("all", "enrolled", "addressed"), default="all")
+    group.add_argument(
+        "--recognizer",
+        choices=("zipformer", "parakeet-v2", "whisper-small-en"),
+        default="parakeet-v2",
+    )
     evaluation = room_actions.add_parser("evaluate", help="Evaluate a local DiPCo subset offline")
     evaluation.add_argument(
         "dataset", type=Path, help="Folder with DiPCo WAVs and annotation JSONs"
     )
     evaluation.add_argument(
-        "--mode", choices=("events", "utterances", "continuous", "recognizer"), default="utterances"
+        "--mode",
+        choices=("events", "utterances", "continuous", "recognizer", "speakers", "diarization"),
+        default="utterances",
     )
     evaluation.add_argument("--split", choices=("all", "dev", "eval"), default="all")
     evaluation.add_argument("--file", help="Evaluate one recording filename")
@@ -77,14 +99,55 @@ def main() -> None:
     evaluation.add_argument(
         "--report", type=Path, required=True, help="Save text-free measurements"
     )
+    from family_harness.identity import DEFAULT_BACKEND
+
+    backends = ("wespeaker-resnet34", "wespeaker-campplus", "wespeaker-resnet293")
+    for action in (setup, group, evaluation):
+        action.add_argument("--speaker-backend", choices=backends, default=DEFAULT_BACKEND)
+    for key, default in (("threshold", 0.3), ("margin", 0.08), ("minimum-seconds", 0.7)):
+        evaluation.add_argument(
+            "--" + key, type=float, default=default, help="Advanced speaker matching setting"
+        )
+    people = commands.add_parser(
+        "people", help="Explicit local voice enrollment and model management"
+    )
+    people.add_argument("--models", type=Path)
+    people.add_argument(
+        "--people", type=Path, help="Local embedding file; keep outside source control"
+    )
+    people.add_argument("--backend", choices=backends, default=DEFAULT_BACKEND)
+    people_actions = people.add_subparsers(dest="people_action", required=True)
+    people_actions.add_parser("list", help="List enrolled people without loading models")
+    people_actions.add_parser("status", help="Inspect speaker and segmentation installation")
+    for name in ("install-model", "install-segmentation"):
+        action = people_actions.add_parser(name, help="Explicit model download or offline import")
+        action.add_argument("--from-directory", type=Path)
+    people_actions.add_parser(
+        "remove-model", help="Remove this speaker model; profiles are retained"
+    )
+    remove_person = people_actions.add_parser("remove", help="Remove an enrolled voice profile")
+    remove_person.add_argument("person_id")
+    enroll = people_actions.add_parser(
+        "enroll", help="Save a consenting person's three WAV phrases"
+    )
+    enroll.add_argument("input", type=Path, nargs="+", help="Three to eight PCM16 mono WAVs")
+    enroll.add_argument(
+        "--name", required=True, help="Person's display name, including local names"
+    )
+    identify = people_actions.add_parser(
+        "identify", help="Match a single-speaker WAV or return unknown"
+    )
+    identify.add_argument("input", type=Path)
     from family_harness.speech import VOICE_PRESETS
 
     setup.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
     replay.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
     for action in (replay, benchmark, room_replay, evaluation):
         action.add_argument(
-            "--recognizer", choices=("zipformer", "parakeet-v2", "whisper-small-en"),
-            default="zipformer", help="Final recognizer; streaming drafts still use Zipformer",
+            "--recognizer",
+            choices=("zipformer", "parakeet-v2", "whisper-small-en"),
+            default="zipformer",
+            help="Final recognizer; streaming drafts still use Zipformer",
         )
     for action in (room_replay, evaluation):
         action.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
@@ -100,11 +163,19 @@ def main() -> None:
 
         try:
             serve(
-                args.port, args.config, not args.no_browser, args.models,
-                args.recognizer, args.preset,
+                args.port,
+                args.config,
+                not args.no_browser,
+                args.models,
+                args.recognizer,
+                args.preset,
+                args.people,
+                args.speaker_backend,
             )
         except SetupError as exc:
             parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
+    elif args.command == "people":
+        run_people(args, parser)
     elif args.command == "room":
         from family_harness.errors import SetupError
         from family_harness.models import ModelStore
@@ -116,34 +187,93 @@ def main() -> None:
         if args.seconds is not None and not 0 < args.seconds <= 3600:
             parser.error("--seconds must be between zero and 3600")
         if args.room_action == "evaluate":
-            if args.limit is not None and args.mode not in ("utterances", "recognizer"):
+            if args.limit is not None and args.mode not in ("utterances", "recognizer", "speakers"):
                 parser.error("--limit applies only to utterance or recognizer evaluation")
-            if args.seconds is not None and args.mode != "continuous":
+            if args.seconds is not None and args.mode not in ("continuous", "diarization"):
                 parser.error("--seconds applies only to continuous evaluation")
         try:
-            settings = VOICE_PRESETS[args.preset]
-            if args.silence is not None:
+            settings = VOICE_PRESETS[getattr(args, "preset", "room")]
+            if getattr(args, "silence", None) is not None:
                 settings = replace(settings, silence=args.silence)
-            if args.gain_db is not None:
+            if getattr(args, "gain_db", None) is not None:
                 settings = replace(settings, gain_db=args.gain_db)
             if args.room_action == "evaluate":
                 from family_harness.dipco import block_network, evaluate
 
                 block_network()
-                result = evaluate(
-                    args.dataset,
-                    args.models,
-                    mode=args.mode,
-                    settings=settings,
-                    split=args.split,
-                    filename=args.file,
-                    limit=args.limit,
-                    seconds=args.seconds,
-                    progress=lambda message: print(message, file=sys.stderr, flush=True),
-                    recognizer=args.recognizer,
+                if args.mode == "speakers":
+                    from family_harness.identity import MatchSettings, SherpaEmbedding
+                    from family_harness.speaker_evaluation import evaluate_speakers
+                    from family_harness.voice_trial import Measurements
+
+                    metrics = Measurements()
+                    try:
+                        result = evaluate_speakers(
+                            args.dataset,
+                            SherpaEmbedding(args.speaker_backend, args.models),
+                            split=args.split,
+                            limit=args.limit,
+                            settings=MatchSettings(
+                                args.threshold, args.margin, args.minimum_seconds
+                            ),
+                            filename=args.file,
+                            progress=lambda m: print(m, file=sys.stderr, flush=True),
+                        )
+                    finally:
+                        measurements = metrics.finish()
+                    result["measurements"] = measurements
+                elif args.mode == "diarization":
+                    from family_harness.speaker_evaluation import evaluate_diarization
+
+                    result = evaluate_diarization(
+                        args.dataset,
+                        args.speaker_backend,
+                        args.models,
+                        split=args.split,
+                        seconds=args.seconds or 300,
+                        filename=args.file,
+                    )
+                else:
+                    result = evaluate(
+                        args.dataset,
+                        args.models,
+                        mode=args.mode,
+                        settings=settings,
+                        split=args.split,
+                        filename=args.file,
+                        limit=args.limit,
+                        seconds=args.seconds,
+                        progress=lambda message: print(message, file=sys.stderr, flush=True),
+                        recognizer=args.recognizer,
+                    )
+            elif args.room_action == "group":
+                from family_harness.asr import StreamingUtteranceRecognizer, load_recognizer
+                from family_harness.group import SherpaDiarizer, group_turns
+                from family_harness.identity import (
+                    PeopleStore,
+                    SherpaEmbedding,
+                    VoiceMatcher,
+                    read_voice_wav,
+                )
+
+                provider = SherpaEmbedding(args.speaker_backend, args.models)
+                matcher = VoiceMatcher(provider, PeopleStore(args.people).load())
+                diarizer = SherpaDiarizer(args.speaker_backend, args.models)
+                if args.recognizer == "zipformer":
+                    store = ModelStore(args.models)
+                    store.verify()
+                    recognizer = StreamingUtteranceRecognizer(store.profile)
+                else:
+                    recognizer = load_recognizer(args.recognizer, args.models)
+                result = group_turns(
+                    read_voice_wav(args.input, maximum=300, seconds=args.seconds),
+                    diarizer,
+                    matcher,
+                    recognizer,
+                    participation=args.participation,
                 )
             elif args.events:
-                result = replay_events(args.input)
+                result = replay_events(args.input, participation=args.participation)
             else:
                 store = ModelStore(args.models)
                 store.verify()
@@ -151,7 +281,8 @@ def main() -> None:
 
                 finalizer = (
                     load_recognizer(args.recognizer, store.root)
-                    if args.recognizer != "zipformer" else None
+                    if args.recognizer != "zipformer"
+                    else None
                 )
                 voice = LocalVoice(store.profile, settings, finalizer=finalizer)
                 voice.warm()
@@ -248,3 +379,103 @@ def main() -> None:
             parser.exit(1, "Voice operation stopped. Audio is off.\n")
     else:
         parser.print_help()
+
+
+def run_people(args, parser):
+    from family_harness.errors import SetupError
+    from family_harness.identity import (
+        PeopleStore,
+        SherpaEmbedding,
+        VoiceMatcher,
+        enrollment,
+        read_voice_wav,
+        segmentation_store,
+        speaker_store,
+    )
+
+    try:
+        store = PeopleStore(args.people)
+        action = args.people_action
+        if action == "list":
+            result = store.public()
+        elif action == "status":
+            result = {
+                "speaker_model": speaker_store(args.backend, args.models).status(),
+                "segmentation_model": segmentation_store(args.models).status(),
+            }
+        elif action == "remove":
+            store.remove(args.person_id)
+            result = {"status": "removed"}
+        elif action in ("install-model", "install-segmentation", "remove-model"):
+            from family_harness.control import child_options
+
+            selected = (
+                segmentation_store(args.models)
+                if action == "install-segmentation"
+                else speaker_store(args.backend, args.models)
+            )
+            request = {
+                "kind": {
+                    "install-model": "speaker_install",
+                    "install-segmentation": "segmentation_install",
+                    "remove-model": "speaker_remove",
+                }[action],
+                "models": str(selected.root),
+                "backend": args.backend,
+            }
+            source = getattr(args, "from_directory", None)
+            if source:
+                request["source"] = str(source)
+            elif action != "remove-model":
+                size = selected.status()["download_bytes"] / 2**20
+                print(f"Downloading {size:.1f} MiB for local speaker processing. Audio stays off.")
+            child = subprocess.run(
+                [sys.executable, "-m", "family_harness.people_worker"],
+                input=json.dumps(request) + "\n",
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                timeout=600,
+                **child_options(),
+            )
+            events = [json.loads(line) for line in child.stdout.splitlines()]
+            errors = [e["error"] for e in events if e.get("type") == "error"]
+            if errors:
+                parser.exit(1, f"{errors[-1]['message']}\n{errors[-1]['recovery']}\n")
+            results = [e["result"] for e in events if e.get("type") == "result"]
+            if child.returncode or not results:
+                raise ValueError("speaker model operation could not finish")
+            result = results[-1]
+        else:
+            provider = SherpaEmbedding(args.backend, args.models)
+            if action == "enroll":
+                profile, quality = enrollment(
+                    provider, [read_voice_wav(p) for p in args.input], args.name
+                )
+                store.save(profile)
+                result = {
+                    "person_id": profile.person_id,
+                    "name": profile.name,
+                    "saved": True,
+                    "quality": quality,
+                }
+            else:
+                from dataclasses import asdict
+
+                result = asdict(
+                    VoiceMatcher(provider, store.load()).identify(read_voice_wav(args.input))
+                )
+        print(json.dumps(result, indent=2, ensure_ascii=True))
+    except SetupError as exc:
+        parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
+    except (
+        OSError,
+        ValueError,
+        KeyError,
+        TypeError,
+        RuntimeError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        parser.exit(1, f"People operation failed: {exc}. Check the local files and options.\n")
+    except KeyboardInterrupt:
+        parser.exit(1, "People operation stopped. Audio is off.\n")

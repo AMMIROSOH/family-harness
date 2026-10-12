@@ -73,6 +73,16 @@ def test_host_check_also_guards_read_routes(server):
     assert request(server, "/api/state", headers={"Host": "attacker.example"})[0] == 403
 
 
+def test_people_route_is_authenticated_and_read_state_excludes_vectors(server):
+    status, _, body = request(server, "/api/state")
+    assert status == 200 and "people" in json.loads(body)
+    assert "embedding" not in json.loads(body)["people"]
+    assert request(server, "/api/people", {"kind": "people_enroll"},
+                   headers={"X-Setup-Token": "wrong"})[0] == 403
+    assert request(server, "/api/people", {"kind": "people_enroll", "name": "Name"})[0] == 400
+    assert server.audio.process is None
+
+
 def test_save_reload_does_not_start_audio(server, selection):
     assert request(server, "/api/devices")[0] == 200
     status, _, body = request(server, "/api/config", selection)

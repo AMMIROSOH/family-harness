@@ -1,6 +1,6 @@
 # Family Harness
 
-**Under development — room-audio, local English speech, and room-manager replay previews.** M1.1/M1.2 audio setup and the M1.3 voice-profile foundation are implemented for Windows WASAPI: a localhost wizard, bounded audio tests, local model download/import, streaming transcription, and a fixed synthesized test response. M1.4 adds a deterministic room manager, continuous file replay, and local DiPCo evaluation. The household hardware and offline voice exit gates are still pending. Live room conversations, speaker recognition, memory, and tools are not implemented yet.
+**Under development — room-audio, local English speech, room-manager replay, and people previews.** M1.1/M1.2 audio setup and the M1.3 voice-profile foundation are implemented for Windows WASAPI: a localhost wizard, bounded audio tests, local model download/import, streaming transcription, and a fixed synthesized test response. M1.4 adds a deterministic room manager, continuous file replay, and local DiPCo evaluation. M1.5 adds local voice enrollment, uncertain speaker matching, attributed group replay, participation policies, and bounded microphone previews. Household hardware and speech/identity quality gates are still pending. Live room conversations, memory, and tools are not implemented yet.
 
 Family Harness aims to make a shared voice agent useful in everyday life. Start with a modest PC, a microphone, and a speaker: a family member calls the assistant, it recognizes an enrolled voice, and it responds using the appropriate context, memories, and tools. Other people can join, interrupt, continue, or disagree within the same conversation.
 
@@ -25,7 +25,7 @@ These are product goals. The preview implements room-audio setup, diagnostics, a
 
 The first target is **Windows 10/11 x64** with microphones and speakers exposed through Windows WASAPI. Read-only discovery has been checked on the development host; actual capture, playback, permission recovery, and room acoustics still need the [household validation trial](docs/audio-setup.md#household-validation-trial).
 
-1. Download/clone [this repository](https://github.com/AMMIROSOH/family-harness) and run **`Install-Windows.cmd`**. This explicit installation action downloads Python 3.12 if needed and locked Python libraries (roughly 70–130 MB on a fresh machine). It does not activate audio or download voice models.
+1. Download/clone [this repository](https://github.com/AMMIROSOH/family-harness) and run **`Install-Windows.cmd`**. This explicit installation action downloads Python 3.12 if needed and locked Python libraries, including speaker-model preparation tooling (roughly 90–150 MB on a fresh machine). It does not activate audio or download voice models.
 2. Run **`Start-Setup.cmd`**. Keep the launcher window open; it prints a clickable localhost address if the browser does not open. Press Ctrl+C in that window to close setup.
 3. Name a space and room, select devices by their friendly names, and explicitly run the microphone and speaker tests. Refresh after connecting hardware.
 4. Check background noise, compare nearby/far speaking positions, choose one echo cancellation owner, and try the duplex test.
@@ -67,6 +67,8 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 - [Audio setup guide](docs/audio-setup.md): supported preview path, recovery, architecture choices, upgrade/uninstall, and manual validation.
 - [Local English voice profile](docs/local-voice-profile.md): model management, offline replay, warm-up, bounded voice trial, measurements, and pending hardware validation.
 - [Room manager and DiPCo evaluation](docs/room-manager.md): event contracts, lifecycle/cancellation, continuous replay, and offline speech scoring.
+- [People and group turns](docs/people-and-group-turns.md): local enrollment, identity uncertainty, participation, and bounded group previews.
+- [M1.5 DiPCo results](docs/m15-dipco-evaluation.md): real speaker-model comparisons and separate automatic-diarization validation.
 - [Product direction](docs/vision.md): scope and principles for a global solution.
 - [Architecture direction](docs/architecture.md): proposed boundaries and conversation behavior.
 - [Setup experience](docs/setup-experience.md): tools needed to make installation approachable.
@@ -75,7 +77,7 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 
 ## First milestones
 
-1. **Room Conversation Manager:** audio setup, acoustic diagnostics, the local English CPU speech test, and deterministic room-manager replay are implemented as previews. Household validation, attributed live group turns, and interruptions follow. See the [phased roadmap](docs/room-conversation-roadmap.md).
+1. **Room Conversation Manager:** audio setup, acoustic diagnostics, the local English CPU speech test, deterministic room-manager replay, and bounded people/group previews are implemented. Household and identity-quality validation, attributed live group turns, and interruptions follow. See the [phased roadmap](docs/room-conversation-roadmap.md).
 2. Local conversational agent integration, scoped persistent memory, and a small set of useful tools.
 3. Additional households, supported OS/hardware paths, and collaborative-space validation. Phone/browser and network audio sources follow the roadmap's separate extension tracks.
 
@@ -85,6 +87,7 @@ small streaming profile; see the [accuracy study](docs/dipco-accuracy.md) and
 GPU profiles, cloud adapters, and additional language profiles including Farsi remain TODO.
 Dataset replay measures speech and manager behavior on recorded inputs; it does not establish
 household quality or physical interruption accuracy. M1.3's hardware exit gate is pending.
-M1.4's replay foundation is implemented; M1.5–M1.6 remain planned.
+M1.4's replay foundation and M1.5's bounded people preview are implemented.
+M1.5's DiPCo quality/household gate remains pending; M1.6 remains planned.
 
 Prioritize a working, understandable experience in one room before expanding to multiple rooms or advanced orchestration.

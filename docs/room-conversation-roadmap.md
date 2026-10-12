@@ -1,6 +1,6 @@
 # Milestone 1: Room Conversation Manager
 
-**Status: in progress, 2026-10-12.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.4 adds the deterministic room manager, session/event contracts, response/playback state, cancellation commands, and continuous/DiPCo replay. Household capture/playback and acoustic/voice exit gates remain pending. Live group sessions, enrollment, and physical interruptions remain planned. See [audio validation](audio-setup.md), [voice-profile validation](local-voice-profile.md), and [room-manager evaluation](room-manager.md).
+**Status: in progress, 2026-10-12.** M1.1/M1.2 audio setup and the M1.3 English CPU voice-profile foundation are implemented as Windows previews. M1.4 adds the deterministic room manager, session/event contracts, response/playback state, cancellation commands, and continuous/DiPCo replay. M1.5 implements local enrollment, uncertain identity, participation policies, and bounded group previews. Household capture/playback, acoustic/voice, and speaker-quality exit gates remain pending. Live group sessions and physical interruptions remain planned. See [audio validation](audio-setup.md), [voice-profile validation](local-voice-profile.md), [room-manager evaluation](room-manager.md), and [M1.5 results](m15-dipco-evaluation.md).
 
 ## Outcome and scope
 
@@ -72,7 +72,7 @@ flowchart TD
     Summary --> Health[Room health and repair tools]
 ```
 
-This is the complete planned journey. The wizard implements room naming through saved audio choices, acoustic diagnostics, English CPU model acquisition/benchmarking, and an explicit one-utterance voice test. M1.4 is currently available through device-free CLI replay. Enrollment and live room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
+This is the complete planned journey. The wizard implements room naming through saved audio choices, acoustic diagnostics, English CPU model acquisition/benchmarking, an explicit one-utterance voice test, and M1.5's guided enrollment/bounded group trial. M1.4 is available through device-free CLI replay. Live room conversations remain planned. Each phase must provide a useful result without pretending the entire wizard already works.
 
 Use ordinary labels such as "Microphone on this computer", "Use my phone", "Test speaker", and "Someone farther away cannot be heard". Keep sample rates, transport protocols, model IDs, and debug traces in advanced diagnostics.
 
@@ -103,6 +103,13 @@ separates ASR-only scoring from endpointed scoring, and validates frozen
 settings on S08 and fresh S06 data. See the
 [historical evidence](dipco-evaluation.md). Dataset replay does not complete
 household hardware, identity, or interruption gates.
+
+M1.5's bounded software preview is implemented. Behavior checks exercise two known
+people, an unknown contributor, fast handover, attribution corrections, participation,
+and lifecycle/privacy. Real DiPCo speaker matching selects ResNet293 with corrected
+feature normalization, then reaches 58.8% frozen validation balanced accuracy.
+Automatic boundary/track error remains high. The [M1.5 quality and household gate](m15-dipco-evaluation.md)
+is pending; no synthetic test or reference-bounded score completes it.
 
 ### First-install packaging and operation
 

@@ -3,8 +3,9 @@
 **Implemented replay foundation, 2026-10-12.** The Python room manager assembles
 provisional/final utterances, assigns response IDs, tracks playback, and cancels
 outdated work. It runs with a deterministic responder and explicit local file
-replay. Live room sessions, voice enrollment, speaker recognition, and physical
-interruptions remain later phases. Family Harness is still under development.
+replay. M1.5 now adds [local enrollment and bounded attributed group previews](people-and-group-turns.md).
+Live room sessions and physical interruptions remain later phases. Family Harness
+is still under development.
 
 ## Contracts and lifecycle
 
@@ -39,9 +40,11 @@ must be monotonic and within the response duration. Partial playback stores only
 the confirmed duration; text is marked heard only after complete playback.
 There is no word alignment or physical interruption guarantee in this phase.
 
-Speaker tracks are session-local labels. Unattributed speech stays `unknown`;
-`person_id` and `identity_confidence` stay unset. Annotation-derived labels in
-evaluation are fixture metadata, not model recognition or authorization.
+Speaker tracks are session-local labels. The original continuous speech replay
+leaves `person_id` and `identity_confidence` unset. The separate `room group` path
+uses actual speaker models and explicit attribution events; its uncertainty and
+participation rules are in the [people guide](people-and-group-turns.md).
+Annotation-derived labels in event evaluation remain fixture metadata, not model recognition or authorization.
 Memory and tool access are not implemented.
 
 Sessions hold at most 4,096 utterances/responses and a 4,096-ID duplicate cache.

@@ -50,10 +50,12 @@ def digest(path: Path) -> str:
 
 
 class ModelStore:
-    def __init__(self, root: Path | None = None, manifest: dict | None = None):
+    def __init__(self, root: Path | None = None, manifest: dict | None = None,
+                 prepare: Callable | None = None):
         self.root = root or default_model_path()
         self.catalog = manifest or catalog()
         self.profile = safe_path(self.root, self.catalog["id"])
+        self.prepare = prepare
 
     def status(self) -> dict:
         # Existence only; full hashing occurs in the worker before loading.
@@ -157,6 +159,8 @@ class ModelStore:
                         "file": asset["name"],
                     }
                 )
+            if self.prepare:
+                self.prepare(content)
             record = {
                 "catalog": self.catalog,
                 "files": [

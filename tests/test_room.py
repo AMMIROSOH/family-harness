@@ -30,6 +30,84 @@ def active():
     return manager
 
 
+def attribution(revision=1, person_id="person-a", state="matched", start=1, end=2):
+    return dict(utterance_id="u1", revision=revision, speaker_track="track-1",
+                person_id=person_id, score=0.8 if person_id else None, state=state,
+                start=start, end=end, backend="local", model_hash="a" * 64)
+
+
+def test_late_identity_updates_do_not_change_words_or_create_replies():
+    manager = active()
+    send(manager, "transcript", 2, **transcript(final=True))
+    assert send(manager, "attribution", 3, **attribution()) == []
+    turn = manager.utterances["u1"]
+    assert turn.person_id == "person-a" and turn.text == "hello"
+    send(manager, "attribution", 4, **attribution(revision=2, person_id=None, state="ambiguous"))
+    send(manager, "attribution", 5, **attribution())
+    assert turn.person_id is None and turn.identity_state == "ambiguous"
+    assert len(manager.responses) == 1
+    send(manager, "session_closed", 6)
+    send(manager, "attribution", 7, **attribution(revision=3))
+    assert turn.person_id is None
+
+
+def test_enrolled_participation_requires_current_evidence_and_can_withdraw_reply():
+    manager = RoomManager("s1", "room", participation="enrolled")
+    send(manager, "session_started")
+    send(manager, "transcript", 2, **transcript())
+    send(manager, "attribution", 2, **attribution())
+    commands = send(manager, "transcript", 2, **transcript(revision=2, final=True))
+    assert commands[0]["kind"] == "response_requested"
+    commands = send(manager, "attribution", 3,
+                    **attribution(revision=2, person_id=None, state="unknown"))
+    assert {c["kind"] for c in commands} == {"cancel_generation", "stop_playback"}
+    assert send(manager, "attribution", 4, **attribution(revision=3)) == []
+    assert len(manager.responses) == 1
+
+
+def test_unknown_and_unaddressed_turns_preserve_history_without_reply():
+    for policy in ("enrolled", "addressed"):
+        manager = RoomManager("s1", "room", participation=policy)
+        send(manager, "session_started")
+        assert send(manager, "transcript", 2, **transcript(final=True)) == []
+        assert manager.utterances["u1"].status == "final"
+        send(manager, "attribution", 3, **attribution())
+        assert not manager.responses
+    manager = RoomManager("s1", "room", participation="addressed")
+    send(manager, "session_started")
+    assert send(manager, "transcript", 2, **{**transcript(final=True), "addressed": True})
+
+
+def test_attribution_rejects_wrong_source_gap_and_outside_evidence():
+    manager = active()
+    send(manager, "transcript", 2, **transcript(final=True))
+    manager.apply(RoomEvent("other", "s1", "other-source", 3, "attribution", attribution()))
+    send(manager, "attribution", 3, **attribution(start=0))
+    assert manager.utterances["u1"].person_id is None
+    send(manager, "audio_gap", 4)
+    send(manager, "attribution", 5, **attribution())
+    assert manager.utterances["u1"].person_id is None
+
+
+def test_changed_speaker_track_cannot_inherit_previous_person():
+    manager = active()
+    send(manager, "transcript", 2, **transcript())
+    send(manager, "attribution", 2, **attribution())
+    send(manager, "transcript", 3,
+         **{**transcript(revision=2, end=3), "speaker_track": "new-speaker"})
+    turn = manager.utterances["u1"]
+    assert turn.person_id is None and turn.identity_state == "ambiguous"
+    assert turn.speaker_track == "new-speaker"
+
+
+@pytest.mark.parametrize("change", [{"score": float("nan")}, {"state": "unknown"},
+                                    {"person_id": None}, {"revision": 0}])
+def test_invalid_attribution_never_reduces_state(change):
+    manager = active()
+    with pytest.raises(ValueError):
+        send(manager, "attribution", 2, **{**attribution(), **change})
+
+
 def test_revisions_replace_text_finalize_once_and_keep_identity_separate():
     manager = active()
     send(manager, "transcript", 2, **transcript())

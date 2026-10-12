@@ -30,11 +30,13 @@ function selection() {
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll(".test, .voice-action, #refresh, #save, input, select").forEach((item) => item.disabled = value);
+  document.querySelectorAll(".test, .voice-action, .people-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
+  $("people-save").disabled = value || !candidateJobId;
   $("listening").textContent = value ? "Audio test active · use Stop / mute anytime" : "Microphone off · no test running";
   if (!value) {
     $("input-level").value = 0; $("level-text").textContent = "Microphone off";
     $("voice-level").value = 0; $("voice-level-text").textContent = "Microphone off";
+    $("people-level").value = 0;
   }
 }
 function deviceOptions(id, devices, selected) {
@@ -131,7 +133,8 @@ async function start(kind) {
 }
 $("stop").addEventListener("click", async () => {
   try {
-    await api("/api/stop", {}); jobId = null; setBusy(false);
+    await api("/api/stop", {}); jobId = null; candidateJobId = null; setBusy(false);
+    $("people-instruction").textContent = "Stopped. Audio is off; any unsaved enrollment was discarded.";
     $("voice-instruction").textContent = "Stopped. Audio is off; voice models are released.";
     $("voice-progress").value = 0;
     $("test-progress").value = 0;
@@ -172,6 +175,7 @@ let configPath = "";
   try {
     const state = await api("/api/state"); token = state.token; saved = state.config; configPath = state.config_path;
     renderVoiceState(state.voice);
+    renderPeople(state.people);
     if (saved) {
       $("space-name").value = saved.space_name; $("room-name").value = saved.room_name;
       $("device-use").value = saved.device_use || "room"; $("echo-owner").value = saved.echo_owner;
@@ -271,3 +275,86 @@ document.querySelectorAll(".voice-action").forEach((button) => button.addEventLi
     jobId = job.id; pollVoice(jobId);
   } catch (error) { setBusy(false); showError(error); }
 }));
+
+let candidateJobId = null, enrolledPeople = [];
+function renderPeople(state) {
+  enrolledPeople = state.people;
+  const size = (state.speaker_model.download_bytes / 2**20).toFixed(1);
+  $("speaker-install").textContent = `Download speaker model · ${size} MiB`;
+  $("people-status").textContent = `${enrolledPeople.length} enrolled people. Speaker model ${state.speaker_model.installed ? "installed" : "missing"}; segmentation ${state.segmentation_model.installed ? "installed" : "missing"}. Audio is off.`;
+  $("people-models").textContent = JSON.stringify(state, null, 2);
+  $("people-list").replaceChildren();
+  enrolledPeople.forEach((person) => {
+    const row = document.createElement("p"), label = document.createElement("span"), button = document.createElement("button");
+    label.textContent = `${person.name} · enrolled locally `; label.dir = "auto";
+    button.textContent = `Remove ${person.name}`; button.type = "button"; button.className = "people-action";
+    button.addEventListener("click", async () => {
+      setBusy(true);
+      try { await api("/api/people", {kind: "people_remove", person_id: person.person_id});
+        renderPeople((await api("/api/state")).people); }
+      catch (error) { showError(error); }
+      finally { setBusy(false); }
+    });
+    row.append(label, button); $("people-list").append(row);
+  });
+}
+async function pollPeople(id) {
+  try {
+    const job = await api(`/api/job?id=${encodeURIComponent(id)}`);
+    if (jobId !== id) return;
+    const p = job.progress, listening = ["enrollment_listening", "group_listening"].includes(p.phase);
+    $("listening").textContent = listening ? "People preview · microphone on" : "People preview · audio off";
+    $("people-instruction").textContent = p.phase === "enrollment_listening" ?
+      `Phrase ${p.phrase} of 3: ${["describe your room", "describe an activity you enjoy", "describe a plan for tomorrow"][p.phrase - 1]}. Microphone is on.` :
+      p.phase === "group_listening" ? "Speak in turn. Microphone is on; speaker is off." :
+      p.phase === "enrollment_analyzing" ? "Microphone is off. Checking the three phrases; nothing is saved yet." :
+      p.phase === "group_decoding" ? "Microphone is off. Finding speakers and transcribing group turns." :
+      "Preparing local models. Audio is off.";
+    $("people-progress").value = p.total_bytes ? p.bytes / p.total_bytes :
+      Math.min(1, (p.seconds || 0) / (p.duration || 1));
+    $("people-level").value = listening ? Math.max(0, Math.min(1, ((p.level_dbfs ?? -80) + 80) / 80)) : 0;
+    if (job.status === "running") { setTimeout(() => pollPeople(id), 250); return; }
+    jobId = null;
+    if (job.status === "error") showError(job.error);
+    if (job.status === "completed" && job.request.kind === "people_enroll") candidateJobId = id;
+    setBusy(false);
+    $("people-instruction").textContent = job.status === "completed" ? "Preview complete. Audio is off." : job.reason || "Preview failed. Audio is off.";
+    if (job.result) {
+      const report = {...job.result, utterances: job.result.utterances?.map(({text, ...turn}) => turn)};
+      $("people-diagnostics").textContent = JSON.stringify(report, null, 2);
+      $("people-result").textContent = job.request.kind === "people_enroll" ?
+        `Three phrases checked for ${job.request.name}. Review who spoke, then save the voice profile or record again. Nothing is saved yet.` :
+        job.result.recovery || "Review the attributed turns. Unknown or uncertain voices stay unknown. Hardware quality is still unvalidated.";
+      $("group-turns").replaceChildren();
+      for (const turn of job.result.utterances || []) {
+        const row = document.createElement("p"), person = enrolledPeople.find((p) => p.person_id === turn.person_id);
+        row.dir = "auto";
+        row.textContent = `${person?.name || "Unknown voice"} (${turn.speaker_track}, ${turn.identity_state}): ${turn.text || "Speech could not be transcribed; please repeat one person at a time."}`;
+        $("group-turns").append(row);
+      }
+    }
+    renderPeople((await api("/api/state")).people);
+  } catch (error) {
+    if (jobId !== id) return;
+    showError(error); jobId = null; setBusy(false);
+    $("people-instruction").textContent = "Connection lost. The operation stops within three seconds.";
+  }
+}
+document.querySelectorAll(".people-action[data-action]").forEach((button) => button.addEventListener("click", async () => {
+  $("error").hidden = true; candidateJobId = null; setBusy(true);
+  try {
+    const job = await api("/api/people", {...selection(), kind: button.dataset.action,
+      name: $("person-name").value, consent: $("person-consent").checked,
+      source: $("people-source").value, participation: $("participation").value});
+    jobId = job.id; pollPeople(jobId);
+  } catch (error) { setBusy(false); showError(error); }
+}));
+$("people-save").addEventListener("click", async () => {
+  setBusy(true);
+  try {
+    await api("/api/people", {kind: "people_save", job_id: candidateJobId}); candidateJobId = null;
+    $("people-result").textContent = "Voice profile saved locally. The original recording was discarded.";
+    renderPeople((await api("/api/state")).people);
+  } catch (error) { showError(error); }
+  finally { setBusy(false); }
+});

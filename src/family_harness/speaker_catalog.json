@@ -1,0 +1,97 @@
+{
+  "profiles": {
+    "wespeaker-resnet34": {
+      "id": "speaker-wespeaker-resnet34-cmn-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "wespeaker-resnet34",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "CC-BY-4.0",
+        "attribution": "WeSpeaker, VoxCeleb-trained speaker model",
+        "source": "https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md"
+      },
+      "assets": [
+        {
+          "name": "wespeaker_en_voxceleb_resnet34_LM.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet34_LM.onnx",
+          "size": 26530550,
+          "sha256": "e9848563da86f263117134dfd7ad63c92355b37de492b55e325400c9d9c39012"
+        }
+      ],
+      "preparation": {
+        "feature_normalize_type": "global-mean",
+        "onnx": "1.19.1",
+        "reference": "https://github.com/wenet-e2e/wespeaker/blob/master/wespeaker/bin/infer_onnx.py"
+      }
+    },
+    "wespeaker-campplus": {
+      "id": "speaker-wespeaker-campplus-cmn-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "wespeaker-campplus",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "CC-BY-4.0",
+        "attribution": "WeSpeaker, VoxCeleb-trained speaker model",
+        "source": "https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md"
+      },
+      "assets": [
+        {
+          "name": "wespeaker_en_voxceleb_CAM++_LM.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_CAM%2B%2B_LM.onnx",
+          "size": 29292687,
+          "sha256": "e197af7e9d473030cf486b3124149a19bf37014d0e4485e4c70c483b0ec10cb2"
+        }
+      ],
+      "preparation": {
+        "feature_normalize_type": "global-mean",
+        "onnx": "1.19.1",
+        "reference": "https://github.com/wenet-e2e/wespeaker/blob/master/wespeaker/bin/infer_onnx.py"
+      }
+    },
+    "wespeaker-resnet293": {
+      "id": "speaker-wespeaker-resnet293-cmn-v1",
+      "version": 1,
+      "language": "en",
+      "execution": "cpu",
+      "sample_rate": 16000,
+      "components": {
+        "embedding": "wespeaker-resnet293",
+        "runtime": "sherpa-onnx 1.12.40"
+      },
+      "license": {
+        "code": "Apache-2.0",
+        "weights": "CC-BY-4.0",
+        "attribution": "WeSpeaker, VoxCeleb-trained speaker model",
+        "source": "https://github.com/wenet-e2e/wespeaker/blob/master/docs/pretrained.md"
+      },
+      "assets": [
+        {
+          "name": "wespeaker_en_voxceleb_resnet293_LM.onnx",
+          "destination": "model.onnx",
+          "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/wespeaker_en_voxceleb_resnet293_LM.onnx",
+          "size": 114336527,
+          "sha256": "f65dbc820e534eef64ae12d1e289e20244d60e60f7f00d7b092092b1c458be2e"
+        }
+      ],
+      "preparation": {
+        "feature_normalize_type": "global-mean",
+        "onnx": "1.19.1",
+        "reference": "https://github.com/wenet-e2e/wespeaker/blob/master/wespeaker/bin/infer_onnx.py"
+      }
+    }
+  }
+}

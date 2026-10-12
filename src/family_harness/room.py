@@ -31,6 +31,8 @@ class RoomEvent:
             "transcript": ("utterance_id", "revision", "text", "final", "start", "end"),
             "turn_candidate": ("utterance_id", "authority"),
             "utterance_cancelled": ("utterance_id",),
+            "attribution": ("utterance_id", "revision", "speaker_track", "person_id",
+                            "score", "state", "start", "end", "backend", "model_hash"),
             "response_ready": ("response_id", "text", "duration"),
             "response_cancelled": ("response_id",),
             "playback_progress": ("response_id", "played_seconds"),
@@ -40,7 +42,8 @@ class RoomEvent:
             raise ValueError("unsupported room event kind")
         if any(k not in self.data for k in required[self.kind]):
             raise ValueError("unsupported or incomplete room event")
-        for key in ("utterance_id", "response_id", "speaker_track", "authority", "language"):
+        for key in ("utterance_id", "response_id", "speaker_track", "authority", "language",
+                    "backend", "model_hash"):
             if key in self.data and (
                 not isinstance(self.data[key], str) or not 0 < len(self.data[key]) <= 200
             ):
@@ -49,15 +52,34 @@ class RoomEvent:
             not isinstance(self.data["text"], str) or len(self.data["text"]) > 20000
         ):
             raise ValueError("invalid transcript or response text")
-        if self.kind == "transcript":
+        if self.kind in ("transcript", "attribution"):
             if type(self.data["revision"]) is not int or self.data["revision"] < 1:
                 raise ValueError("revision must be a positive integer")
-            if type(self.data["final"]) is not bool:
+            if self.kind == "transcript" and type(self.data["final"]) is not bool:
                 raise ValueError("final must be boolean")
             self._time(self.data["start"])
             self._time(self.data["end"])
             if self.data["end"] < self.data["start"] or self.data["end"] > self.at + 1e-6:
                 raise ValueError("transcript is outside its source timeline")
+        if "addressed" in self.data and type(self.data["addressed"]) is not bool:
+            raise ValueError("addressed must be boolean")
+        if self.kind == "attribution":
+            person = self.data["person_id"]
+            score = self.data["score"]
+            states = {"matched", "unknown", "ambiguous", "overlap", "insufficient_audio",
+                      "unusable_audio", "not_enrolled"}
+            if self.data["state"] not in states or (person is not None and (
+                not isinstance(person, str) or not 0 < len(person) <= 200
+            )):
+                raise ValueError("invalid identity state or person")
+            if (self.data["state"] == "matched") != (person is not None):
+                raise ValueError("only a matched voice can name a person")
+            if score is not None and (
+                type(score) not in (float, int) or not math.isfinite(score) or not -1 <= score <= 1
+            ):
+                raise ValueError("identity score must be a finite cosine similarity")
+            if person is not None and score is None:
+                raise ValueError("a matched voice requires a score")
         for key in ("duration", "played_seconds"):
             if key in self.data:
                 self._time(self.data[key])
@@ -82,6 +104,12 @@ class Utterance:
     candidate: bool = False
     person_id: str | None = None
     identity_confidence: float | None = None
+    identity_state: str = "not_enrolled"
+    attribution_revision: int = 0
+    identity_backend: str | None = None
+    identity_model_hash: str | None = None
+    identity_evidence: tuple[float, float] | None = None
+    addressed: bool = False
 
 
 @dataclass
@@ -112,10 +140,14 @@ class RoomManager:
     watermarks and response IDs reject stale work without calling any provider.
     """
 
-    def __init__(self, session_id: str, room_id: str, *, max_turns: int = 4096):
+    def __init__(self, session_id: str, room_id: str, *, max_turns: int = 4096,
+                 participation: str = "all"):
         if not session_id or not room_id or max_turns < 1:
             raise ValueError("a session, room, and positive capacity are required")
         self.session_id, self.room_id = session_id, room_id
+        if participation not in ("all", "enrolled", "addressed"):
+            raise ValueError("choose all, enrolled, or addressed participation")
+        self.participation = participation
         self.max_turns = max_turns
         self.status = "idle"
         self.utterances: dict[str, Utterance] = {}
@@ -156,6 +188,33 @@ class RoomManager:
         turn = self.utterances.get(uid)
         if event.at <= self.gaps.get(event.source_id, -1):
             return self._ignore("before_gap")
+        if event.kind == "attribution":
+            if (
+                turn is None or turn.source_id != event.source_id or turn.status == "discarded"
+                or data["revision"] <= turn.attribution_revision
+                or data["start"] < turn.start or data["end"] > turn.end
+                or data["start"] <= self.gaps.get(event.source_id, -1)
+            ):
+                return self._ignore("stale_attribution")
+            turn.attribution_revision = data["revision"]
+            turn.speaker_track = data["speaker_track"]
+            turn.person_id, turn.identity_confidence = data["person_id"], data["score"]
+            turn.identity_state = data["state"]
+            turn.identity_backend, turn.identity_model_hash = data["backend"], data["model_hash"]
+            turn.identity_evidence = (data["start"], data["end"])
+            self.counts["attribution_updates"] += 1
+            # A later identity correction never requests another reply. It may withdraw one.
+            if turn.status == "final" and not self._may_reply(turn):
+                commands = []
+                for response in self.responses.values():
+                    if response.utterance_id == uid and response.status in ("requested", "playing"):
+                        response.status = "cancelled"
+                        commands.extend([
+                            {"kind": "cancel_generation", "response_id": response.response_id},
+                            {"kind": "stop_playback", "response_id": response.response_id},
+                        ])
+                return commands
+            return []
         if event.kind != "transcript":
             if turn is None or turn.source_id != event.source_id or turn.status != "provisional":
                 return self._ignore("stale_turn")
@@ -185,6 +244,12 @@ class RoomManager:
         if data["revision"] <= turn.revision or data["end"] < turn.end:
             return self._ignore("stale_revision")
         turn.revision, turn.text, turn.end = data["revision"], data["text"], data["end"]
+        turn.addressed = data.get("addressed", turn.addressed)
+        if "speaker_track" in data and data["speaker_track"] != turn.speaker_track:
+            turn.speaker_track = data["speaker_track"]
+            turn.person_id = turn.identity_confidence = None
+            turn.identity_state = "ambiguous"
+            turn.identity_evidence = None
         if not data["final"]:
             return []
         if not turn.text.strip() or data.get("reason") in ("audio_gap", "cancelled", "room_limit"):
@@ -196,11 +261,21 @@ class RoomManager:
             return self._ignore("late_final_response")
         self.latest_final_end = turn.end
         commands = self._cancel_responses()
+        if not self._may_reply(turn):
+            self.counts["participation_suppressed"] += 1
+            return commands
         self.response_sequence += 1
         rid = f"{self.session_id}:response:{self.response_sequence}"
         self.responses[rid] = Response(rid, uid)
         commands.append({"kind": "response_requested", "response_id": rid, "utterance_id": uid})
         return commands
+
+    def _may_reply(self, turn: Utterance) -> bool:
+        if self.participation == "enrolled":
+            return turn.person_id is not None and turn.identity_state == "matched"
+        if self.participation == "addressed":
+            return turn.addressed
+        return True
 
     def _ignore(self, reason: str) -> list[dict]:
         self.counts[f"ignored_{reason}"] += 1
@@ -275,6 +350,10 @@ class RoomManager:
             "session_id": self.session_id,
             "room_id": self.room_id,
             "status": self.status,
+            "participation": self.participation,
+            "identity_score_type": "cosine similarity, not probability or authorization",
+            "participants": sorted({t.person_id for t in self.utterances.values()
+                                    if t.status == "final" and t.person_id is not None}),
             "counts": dict(self.counts),
             "utterances": turns,
             "responses": responses,

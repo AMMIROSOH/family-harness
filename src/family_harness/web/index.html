@@ -95,8 +95,8 @@
         <p>Saving does not start listening. Missing devices require a new selection; the app never switches microphones silently.</p>
         <button id="save" class="primary" type="submit">Save room audio setup</button>
         <div id="summary" role="status"></div>
-        <p class="muted">Next, try the local English voice profile below. Room conversations,
-          people, and interruptions remain planned. Energy checks cannot verify transcription quality.</p>
+        <p class="muted">Next, try the local English voice and people previews below. Live room
+          conversations and interruptions remain planned. Energy checks cannot verify transcription quality.</p>
         <details><summary>Advanced diagnostics</summary><pre id="diagnostics">No test results yet.</pre></details>
       </section>
     </form>
@@ -140,6 +140,51 @@
       <p class="muted">Transcripts stay in this page and process memory. Only numeric diagnostics, model
         versions, and hardware details are saved. Household offline validation is still pending.</p>
       <details><summary>Voice performance diagnostics</summary><pre id="voice-diagnostics">No benchmark yet.</pre></details>
+    </section>
+    <section class="card" aria-labelledby="people-heading">
+      <div class="step">07 · People and group turns preview</div>
+      <h2 id="people-heading">Enroll a voice, with their agreement.</h2>
+      <p>Voice profiles store a local mathematical description of a voice and a name. Recordings are
+        discarded. Matching can be wrong or remain unknown; it never grants access to private data or tools.
+        These bounded previews finish before processing speech. Live room replies remain planned.</p>
+      <p id="people-status" role="status">Checking local speaker models.</p>
+      <div class="actions">
+        <button id="speaker-install" class="people-action" data-action="speaker_install" type="button">Download speaker model</button>
+        <button class="people-action" data-action="segmentation_install" type="button">Download speech segmentation · 6.6 MiB</button>
+      </div>
+      <details><summary>Offline model import and licenses</summary>
+        <p>Import the original catalog files from a local folder.
+          This applies the same checks as a download. Neither action opens audio.</p>
+        <label>Local speaker model folder<input id="people-source" dir="auto" placeholder="C:\Models\Speakers"></label>
+        <pre id="people-models"></pre>
+      </details>
+      <label>Person's name<input id="person-name" maxlength="120" dir="auto" placeholder="Name"></label>
+      <label class="check"><input id="person-consent" type="checkbox">This person agrees to record and save a local voice profile.</label>
+      <p>Speak alone, in a quiet room. In each six-second window, say a different sentence lasting at
+        least two seconds. First describe your room, then an activity you enjoy, then a plan for tomorrow.
+        Wait for the phrase number below. Review the result and explicitly save it, or record again.</p>
+      <div class="actions">
+        <button class="people-action primary" data-action="people_enroll" type="button">Record three phrases · microphone on for 18 seconds</button>
+        <button id="people-save" type="button" disabled>Save this voice profile</button>
+      </div>
+      <div id="people-list" aria-label="Enrolled people"></div>
+      <label>Who gets a test response?<select id="participation">
+        <option value="all">Everyone, including unknown guests</option>
+        <option value="enrolled">Matched enrolled voices</option>
+        <option value="addressed">Only explicitly addressed turns in event replay</option>
+      </select></label>
+      <p>Try two enrolled people and an unenrolled guest, speaking in turn. The microphone closes after
+        30 seconds; the preview then finds speaker changes and attributes transcripts. Test responses are
+        simulated and silent. Overlapping speech needs repetition, one person at a time.</p>
+      <button class="people-action primary" data-action="people_trial" type="button">Try group turns · microphone on for 30 seconds</button>
+      <div class="test-display">
+        <p id="people-instruction" role="status" aria-live="polite">Audio is off.</p>
+        <meter id="people-level" min="0" max="1" value="0" aria-label="Enrollment microphone level"></meter>
+        <progress id="people-progress" max="1" value="0" aria-label="People preview progress"></progress>
+      </div>
+      <p id="people-result" role="status"></p>
+      <div id="group-turns" aria-label="Attributed preview turns"></div>
+      <details><summary>People preview diagnostics</summary><pre id="people-diagnostics"></pre></details>
     </section>
   </main>
   <footer>Local control · Windows WASAPI preview · No audio uploads or saved recordings</footer>
