@@ -76,6 +76,9 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 - [Product direction](docs/vision.md): scope and principles for a global solution.
 - [Architecture direction](docs/architecture.md): proposed boundaries and conversation behavior.
 - [Setup experience](docs/setup-experience.md): tools needed to make installation approachable.
+- [Application dashboard plan](docs/dashboard-plan.md): proposed application sections, user journeys, and local architecture.
+- [Dashboard delivery roadmap](docs/dashboard-roadmap.md): Quick Setup and live Voice Management first, followed by the wider application.
+- [Voice Management workspace](docs/voice-management-workspace.md): proposed guided setup, live test catalog, tuning, comparisons, and recovery.
 - [Room Conversation Manager roadmap](docs/room-conversation-roadmap.md): the first milestone, beginning with visual localhost room-audio setup.
 - [Contributor and agent guidance](AGENTS.md): instructions for future development.
 
