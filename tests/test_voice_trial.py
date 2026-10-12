@@ -44,6 +44,21 @@ def test_native_capture_uses_chosen_microphone_and_closes_at_candidate(devices, 
     assert result["recognition_status"] == "recognized"
 
 
+def test_native_final_recognition_runs_only_after_microphone_is_closed(devices, selection):
+    sd = FakeAudio()
+    engine = voice()
+
+    def decode(audio):
+        assert sd.streams[0].closed and len(audio) < 20 * 16000
+        return "stronger final"
+
+    engine.finalizer = SimpleNamespace(decode=decode)
+    result = capture(
+        {**selection, "endpoint_id": "endpoint"}, devices, sd, engine, lambda e: None, metrics(),
+    )
+    assert result["candidate"] and result["transcript"] == "stronger final"
+
+
 def test_silent_capture_is_bounded_and_has_no_completed_candidate(devices, selection):
     sd = FakeAudio(input_level=0)
     result = capture(
@@ -146,6 +161,59 @@ def test_warm_only_verifies_before_loading_and_never_opens_audio(tmp_path, monke
     assert result["hardware_gate"] == "pending"
     saved = json.loads((tmp_path / "benchmark.json").read_text())
     assert saved["measurements"]["peak_sampled_rss_mb"] > 0
+
+
+def test_optional_missing_model_fails_before_any_capture_or_report(tmp_path, monkeypatch):
+    monkeypatch.setattr("family_harness.models.ModelStore.verify", lambda s: None)
+    monkeypatch.setattr("family_harness.speech.LocalVoice", lambda path: SimpleNamespace())
+    monkeypatch.setitem(sys.modules, "sounddevice", None)
+
+    def missing(*args):
+        raise SetupError("recognizer_invalid", "Missing final recognizer", "Install it first")
+
+    monkeypatch.setattr("family_harness.asr.load_recognizer", missing)
+    with pytest.raises(SetupError, match="Missing final recognizer"):
+        execute(
+            {"kind": "voice_trial", "models": str(tmp_path), "recognizer": "parakeet-v2"},
+            lambda e: None,
+        )
+    assert not (tmp_path / "benchmark.json").exists()
+
+
+def test_optional_model_install_is_explicit_scoped_and_never_loads_voice(tmp_path, monkeypatch):
+    calls = []
+    store = SimpleNamespace(
+        install=lambda source, emit: calls.append(source) or {"status": "installed"},
+        remove=lambda: calls.append("removed"),
+    )
+    monkeypatch.setattr("family_harness.asr.recognizer_store", lambda backend, root: store)
+    monkeypatch.setitem(sys.modules, "sounddevice", None)
+    result = execute({
+        "kind": "recognizer_install", "models": str(tmp_path),
+        "recognizer": "parakeet-v2", "source": str(tmp_path / "source"),
+    })
+    assert result["status"] == "installed" and calls == [tmp_path / "source"]
+    result = execute({
+        "kind": "recognizer_remove", "models": str(tmp_path), "recognizer": "parakeet-v2",
+    })
+    assert result["status"] == "removed" and calls[-1] == "removed"
+
+
+def test_optional_install_failure_recovery_preserves_baseline_profile(tmp_path, monkeypatch):
+    def failed(source, emit):
+        raise SetupError("model_invalid", "Integrity failure", "Remove the English CPU profile")
+
+    monkeypatch.setattr(
+        "family_harness.asr.recognizer_store",
+        lambda backend, root: SimpleNamespace(install=failed),
+    )
+    with pytest.raises(SetupError) as error:
+        execute({
+            "kind": "recognizer_install", "models": str(tmp_path), "recognizer": "parakeet-v2",
+        })
+    assert error.value.code == "recognizer_invalid"
+    assert "install-recognizer parakeet-v2" in error.value.recovery
+    assert "baseline English profile is unchanged" in error.value.recovery
 
 
 def test_persisted_report_excludes_personal_text_and_utterance_identity():

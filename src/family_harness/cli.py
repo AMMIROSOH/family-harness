@@ -27,6 +27,10 @@ def main() -> None:
     )
     setup.add_argument("--config", type=Path, help="Alternative room configuration file")
     setup.add_argument("--models", type=Path, help="Alternative local model directory")
+    setup.add_argument(
+        "--recognizer", choices=("zipformer", "parakeet-v2", "whisper-small-en"),
+        default="zipformer", help="Local final recognizer for deliberate voice trials",
+    )
     voice = commands.add_parser("voice", help="Manage and benchmark the local English CPU profile")
     voice.add_argument("--models", type=Path, help="Alternative local model directory")
     actions = voice.add_subparsers(dest="voice_action", required=True)
@@ -38,6 +42,11 @@ def main() -> None:
         "--from-directory", type=Path, help="Import catalog files without internet"
     )
     actions.add_parser("remove", help="Remove only the installed English CPU model profile")
+    for command in ("install-recognizer", "status-recognizer", "remove-recognizer"):
+        action = actions.add_parser(command, help="Manage an optional local final recognizer")
+        action.add_argument("recognizer", choices=("parakeet-v2", "whisper-small-en"))
+        if command == "install-recognizer":
+            action.add_argument("--from-directory", type=Path, help="Import pinned files offline")
     benchmark = actions.add_parser("benchmark", help="Load and warm models without opening audio")
     benchmark.add_argument("--report", type=Path, help="Save diagnostics without spoken text")
     replay = actions.add_parser(
@@ -60,7 +69,7 @@ def main() -> None:
         "dataset", type=Path, help="Folder with DiPCo WAVs and annotation JSONs"
     )
     evaluation.add_argument(
-        "--mode", choices=("events", "utterances", "continuous"), default="utterances"
+        "--mode", choices=("events", "utterances", "continuous", "recognizer"), default="utterances"
     )
     evaluation.add_argument("--split", choices=("all", "dev", "eval"), default="all")
     evaluation.add_argument("--file", help="Evaluate one recording filename")
@@ -70,7 +79,13 @@ def main() -> None:
     )
     from family_harness.speech import VOICE_PRESETS
 
+    setup.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
     replay.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
+    for action in (replay, benchmark, room_replay, evaluation):
+        action.add_argument(
+            "--recognizer", choices=("zipformer", "parakeet-v2", "whisper-small-en"),
+            default="zipformer", help="Final recognizer; streaming drafts still use Zipformer",
+        )
     for action in (room_replay, evaluation):
         action.add_argument("--preset", choices=tuple(VOICE_PRESETS), default="room")
         action.add_argument("--silence", type=float, help="Completion silence, 0.3-2 seconds")
@@ -84,7 +99,10 @@ def main() -> None:
         from family_harness.server import serve
 
         try:
-            serve(args.port, args.config, not args.no_browser, args.models)
+            serve(
+                args.port, args.config, not args.no_browser, args.models,
+                args.recognizer, args.preset,
+            )
         except SetupError as exc:
             parser.exit(1, f"{exc.message}\n{exc.recovery}\n")
     elif args.command == "room":
@@ -98,8 +116,8 @@ def main() -> None:
         if args.seconds is not None and not 0 < args.seconds <= 3600:
             parser.error("--seconds must be between zero and 3600")
         if args.room_action == "evaluate":
-            if args.limit is not None and args.mode != "utterances":
-                parser.error("--limit applies only to utterance evaluation")
+            if args.limit is not None and args.mode not in ("utterances", "recognizer"):
+                parser.error("--limit applies only to utterance or recognizer evaluation")
             if args.seconds is not None and args.mode != "continuous":
                 parser.error("--seconds applies only to continuous evaluation")
         try:
@@ -122,13 +140,20 @@ def main() -> None:
                     limit=args.limit,
                     seconds=args.seconds,
                     progress=lambda message: print(message, file=sys.stderr, flush=True),
+                    recognizer=args.recognizer,
                 )
             elif args.events:
                 result = replay_events(args.input)
             else:
                 store = ModelStore(args.models)
                 store.verify()
-                voice = LocalVoice(store.profile, settings)
+                from family_harness.asr import load_recognizer
+
+                finalizer = (
+                    load_recognizer(args.recognizer, store.root)
+                    if args.recognizer != "zipformer" else None
+                )
+                voice = LocalVoice(store.profile, settings, finalizer=finalizer)
                 voice.warm()
                 result = replay_wav(args.input, voice, seconds=args.seconds)
             if args.report:
@@ -158,7 +183,11 @@ def main() -> None:
         from family_harness.models import ModelStore
 
         store = ModelStore(args.models)
-        if args.voice_action == "status":
+        if args.voice_action in ("install-recognizer", "status-recognizer", "remove-recognizer"):
+            from family_harness.asr import recognizer_store
+
+            store = recognizer_store(args.recognizer, store.root)
+        if args.voice_action in ("status", "status-recognizer"):
             print(json.dumps(store.status(), indent=2))
             return
         kinds = {
@@ -166,8 +195,18 @@ def main() -> None:
             "remove": "voice_remove",
             "benchmark": "voice_warm",
             "replay": "voice_replay",
+            "install-recognizer": "recognizer_install",
+            "remove-recognizer": "recognizer_remove",
         }
         request = {"kind": kinds[args.voice_action], "models": str(store.root)}
+        if getattr(args, "recognizer", "zipformer") != "zipformer":
+            request["recognizer"] = args.recognizer
+        if args.voice_action == "install-recognizer":
+            if args.from_directory:
+                request["source"] = str(args.from_directory)
+            else:
+                size = sum(a["size"] for a in store.catalog["assets"]) / 2**20
+                print(f"Downloading {size:.1f} MiB for local {args.recognizer}. Audio stays off.")
         if args.voice_action == "install":
             if args.from_directory:
                 request.update(kind="voice_import", source=str(args.from_directory))
@@ -192,7 +231,7 @@ def main() -> None:
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
-                timeout=600 if args.voice_action == "install" else 120,
+                timeout=600 if args.voice_action in ("install", "install-recognizer") else 120,
                 **child_options(),
             )
             events = [json.loads(line) for line in child.stdout.splitlines()]

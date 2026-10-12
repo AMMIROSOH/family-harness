@@ -139,6 +139,19 @@ def test_voice_jobs_share_audio_exclusion_and_disconnect_cancellation(control, s
     assert control.poll(job["id"])["request"]["kind"] == "voice_warm"
 
 
+def test_optional_final_recognizer_is_forwarded_only_to_voice_inference(control):
+    control.recognizer = "parakeet-v2"
+    control.preset = "close-talk"
+    control._launch = lambda request, *args: request
+    request = control.start_voice({"kind": "voice_warm"})
+    assert request["recognizer"] == "parakeet-v2"
+    assert request["preset"] == "close-talk"
+    assert "recognizer" not in control.start_voice({"kind": "voice_remove"})
+    status = control.voice_status()
+    assert status["final_recognizer"] == "parakeet-v2"
+    assert status["final_recognizer_state"]["download_bytes"] > 600_000_000
+
+
 def test_voice_trial_requires_selected_devices_and_volume_confirmation(control, selection):
     control.voice_command = control.command
     with pytest.raises(SetupError) as error:

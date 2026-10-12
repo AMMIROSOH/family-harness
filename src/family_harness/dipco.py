@@ -18,7 +18,13 @@ import numpy as np
 from family_harness.models import ModelStore, digest
 from family_harness.room import RoomEvent
 from family_harness.room_replay import ReplayHarness, distribution, replay_wav, wav_info
-from family_harness.speech import SPEECH_RATE, LocalVoice, SpeechTurn, VoiceSettings
+from family_harness.speech import (
+    SPEECH_RATE,
+    LocalVoice,
+    SpeechTurn,
+    VoiceSettings,
+    replay_tail_seconds,
+)
 from family_harness.voice_trial import Measurements
 
 
@@ -167,7 +173,79 @@ def aggregate(rows):
     }
 
 
-def evaluate_utterances(item, voice, limit=None):
+def read_utterance(recording, row: Annotation, *, context=0.0):
+    rate, frames = wav_info(recording)
+    left = max(0, int((row.start - context) * rate))
+    right = min(frames, int((row.end + context) * rate))
+    recording.setpos(left)
+    raw = recording.readframes(right - left)
+    if len(raw) != (right - left) * 2:
+        raise ValueError("truncated WAV")
+    samples = np.frombuffer(raw, "<i2").astype(np.float32) / 32768
+    if rate != SPEECH_RATE:
+        from family_harness.speech import StreamingResampler
+
+        samples = StreamingResampler(rate, SPEECH_RATE).resample(samples, flush=True)
+    return samples
+
+
+def evaluate_recognizer(item, recognizer, *, limit=None, settings=None, progress=None):
+    """Reference-bounded ASR diagnostic, independent of VAD/turn completion.
+
+    All models see the same exact reference interval. No neighboring words are
+    introduced by padding, and no early candidate truncates the model input.
+    """
+    from family_harness.speech import speech_input
+
+    settings = settings or VoiceSettings(processing=False)
+    results = []
+    before = time.perf_counter()
+    decode_ms = []
+    audio_seconds = 0.0
+    with wave.open(str(item["path"])) as recording:
+        for row in select_rows(item["rows"], limit):
+            samples = read_utterance(recording, row)
+            processor = speech_input(settings)
+            if processor:
+                samples = np.concatenate(
+                    (
+                        processor.process(samples),
+                        processor.process(np.empty(0, np.float32), flush=True),
+                    )
+                )
+            start = time.perf_counter()
+            text = recognizer.decode(samples)
+            decode_ms.append((time.perf_counter() - start) * 1000)
+            audio_seconds += len(samples) / SPEECH_RATE
+            results.append(
+                {
+                    "annotation_index": row.index,
+                    "overlap": row.overlap,
+                    "errors": error_counts(row.text, text),
+                    "empty": not bool(text.strip()),
+                }
+            )
+            if progress and len(results) % 25 == 0:
+                progress(f"{item['path'].name}: {len(results)} utterances")
+    elapsed = time.perf_counter() - before
+    return {
+        "all": aggregate(results),
+        "nonoverlap": aggregate([r for r in results if not r["overlap"]]),
+        "overlap": aggregate([r for r in results if r["overlap"]]),
+        "empty_transcripts": sum(r["empty"] for r in results),
+        "decode_ms": distribution(decode_ms),
+        "wall_seconds": round(elapsed, 3),
+        "processed_audio_seconds": round(audio_seconds, 3),
+        "real_time_factor": round(elapsed / audio_seconds, 4) if audio_seconds else None,
+        "reference_boundaries": True,
+        "vad_gating": False,
+        "early_endpointing": False,
+        "context_seconds": 0,
+        "rows": results,
+    }
+
+
+def evaluate_utterances(item, voice, limit=None, *, progress=None):
     rows = select_rows(item["rows"], limit)
     results = []
     started = time.perf_counter()
@@ -191,9 +269,11 @@ def evaluate_utterances(item, voice, limit=None):
                 lambda e: None,
                 processor=voice.input_processor,
                 completion_silence=voice.settings.silence,
+                finalizer=getattr(voice, "finalizer", None),
             )
             end = 0.0
-            for offset in range(0, len(samples) + SPEECH_RATE, 160):
+            tail_samples = int(replay_tail_seconds(voice.settings.silence) * SPEECH_RATE)
+            for offset in range(0, len(samples) + tail_samples, 160):
                 chunk = (
                     samples[offset : offset + 160]
                     if offset < len(samples)
@@ -205,6 +285,10 @@ def evaluate_utterances(item, voice, limit=None):
                     break
             turn.finish(end, "replay_eof")
             audio_seconds += end
+            clipping = (
+                voice.input_processor.diagnostics()["processed"]["clipping_fraction"]
+                if voice.input_processor else None
+            )
             results.append(
                 {
                     "annotation_index": row.index,
@@ -216,8 +300,11 @@ def evaluate_utterances(item, voice, limit=None):
                     and left / rate + end < row.end - 0.1,
                     "first_partial_audio_ms": turn.partial_latency,
                     "completion_after_vad_ms": turn.candidate_latency,
+                    "processed_clipping_fraction": clipping,
                 }
             )
+            if progress and len(results) % 25 == 0:
+                progress(f"{item['path'].name}: {len(results)} utterances")
     elapsed = time.perf_counter() - started
     return {
         "all": aggregate(results),
@@ -226,6 +313,9 @@ def evaluate_utterances(item, voice, limit=None):
         "vad_misses": sum(not r["speech_detected"] for r in results),
         "premature_completions": sum(r["premature"] for r in results),
         "without_silence_candidate": sum(not r["candidate"] for r in results),
+        "max_processed_clipping_fraction": max(
+            (r["processed_clipping_fraction"] or 0 for r in results), default=0,
+        ),
         "first_partial_audio_ms": distribution(
             [
                 r["first_partial_audio_ms"]
@@ -242,6 +332,7 @@ def evaluate_utterances(item, voice, limit=None):
         ),
         "wall_seconds": round(elapsed, 3),
         "processed_audio_seconds": round(audio_seconds, 3),
+        "maximum_synthetic_tail_seconds": replay_tail_seconds(voice.settings.silence),
         "real_time_factor": round(elapsed / audio_seconds, 4) if audio_seconds else None,
         "rows": results,
     }
@@ -373,6 +464,7 @@ def evaluate(
     limit=None,
     seconds=None,
     progress=print,
+    recognizer="zipformer",
 ) -> dict:
     items = [
         item
@@ -382,25 +474,45 @@ def evaluate(
     ]
     if not items:
         raise ValueError("no recordings match the requested split/file")
-    if mode not in ("events", "utterances", "continuous"):
+    if mode not in ("events", "utterances", "continuous", "recognizer"):
         raise ValueError("unsupported evaluation mode")
     metrics = Measurements()
     voice = None
     settings = settings or VoiceSettings()
     store = ModelStore(models)
+    engine = None
+    recognizer_manifest = None
     results = []
     try:
         if mode != "events":
-            store.verify()
-            voice = LocalVoice(store.profile, settings)
-            voice.warm()
+            from family_harness.asr import (
+                StreamingUtteranceRecognizer,
+                load_recognizer,
+                recognizer_catalog,
+            )
+
+            if recognizer != "zipformer":
+                engine = load_recognizer(recognizer, store.root)
+                recognizer_manifest = recognizer_catalog(recognizer)
+            if mode == "recognizer":
+                if engine is None:
+                    store.verify()
+                    engine = StreamingUtteranceRecognizer(store.profile / "stt")
+            else:
+                store.verify()
+                voice = LocalVoice(store.profile, settings, finalizer=engine)
+                voice.warm()
         for item in items:
             progress(f"Evaluating {item['path'].name} ({mode})")
-            score = (
+            score = evaluate_recognizer(
+                item, engine, limit=limit, settings=settings, progress=progress,
+            ) if (
+                mode == "recognizer"
+            ) else (
                 evaluate_events(item)
                 if mode == "events"
                 else (
-                    evaluate_utterances(item, voice, limit)
+                    evaluate_utterances(item, voice, limit, progress=progress)
                     if mode == "utterances"
                     else evaluate_continuous(item, voice, seconds)
                 )
@@ -419,17 +531,21 @@ def evaluate(
     finally:
         measurements = metrics.finish()
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "recognizer": recognizer,
+        "recognizer_catalog": recognizer_manifest,
         "dataset": "DiPCo local subset",
         "mode": mode,
         "settings": asdict(settings),
         "recordings": results,
         "measurements": measurements,
-        "profile_id": store.catalog["id"] if voice else None,
+        "profile_id": store.catalog["id"] if voice or (
+            mode == "recognizer" and recognizer == "zipformer"
+        ) else None,
         "model_assets": [
             {"name": a["name"], "sha256": a["sha256"]} for a in store.catalog["assets"]
         ]
-        if voice
+        if voice or (mode == "recognizer" and recognizer == "zipformer")
         else [],
         "normalization": "NFKC/casefold; remove bracketed tags and punctuation except apostrophes",
         "limitations": [
@@ -437,6 +553,7 @@ def evaluate(
             "Utterance mode uses reference boundaries and independent one-utterance trials.",
             "Unintelligible, nonlexical and >28-second annotations excluded from utterance WER.",
             "Continuous chronological WER includes overlap and is not official DiPCo scoring.",
+            "Recognizer mode uses exact reference intervals without VAD or endpointing.",
             "Close-talk clip scoring uses the named speaker; cross-talk can add words.",
             "Playback is simulated. Hardware, echo and interruption gates remain pending.",
         ],

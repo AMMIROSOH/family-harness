@@ -58,8 +58,58 @@ calibration and speaker playback validation are still required.
 
 [`voice_catalog.json`](../src/family_harness/voice_catalog.json) fixes profile ID `english-cpu-v2`,
 language `en`, CPU execution, component versions, sources, sizes, SHA-256 hashes, and license provenance.
-Only this profile is selectable. Default model storage is `%LOCALAPPDATA%/FamilyHarness/models`.
+This remains the small streaming/TTS baseline. Optional final recognizers are described below.
+Default model storage is `%LOCALAPPDATA%/FamilyHarness/models`.
 Use `setup --models PATH` or `voice --models PATH` for a different local directory.
+
+## Optional higher-accuracy finals
+
+Parakeet TDT v2 and Whisper small.en can replace the **final** transcript while
+Zipformer continues to supply provisional streaming drafts. These are English-only,
+CPU int8 whole-utterance models, not streaming Parakeet/Whisper implementations.
+Recognition and VAD remain separate; a VAD miss or premature endpoint still loses words.
+No silence-only final is decoded during a trial. At most 30 seconds of conditioned audio
+are retained in RAM, then released. Native trials close the microphone before final
+decoding; Stop and the browser lease still terminate the worker.
+
+```sh
+uv run family-harness voice install-recognizer parakeet-v2
+uv run family-harness voice status-recognizer parakeet-v2
+uv run family-harness voice benchmark --recognizer parakeet-v2
+uv run family-harness voice replay short.wav --recognizer parakeet-v2
+uv run family-harness setup --recognizer parakeet-v2
+```
+
+Install the baseline English profile as well for streaming/VAD/TTS trials. The final
+recognizer is independently selectable from the microphone `--preset`; defaults remain
+the original room processing and Zipformer until deliberately changed. High-gain presets
+are for unusually quiet input, not generic microphones. No Windows input settings change.
+
+[`asr_catalog.json`](../src/family_harness/asr_catalog.json) pins the repositories,
+revisions, file sizes and SHA-256 hashes. Parakeet downloads 661,190,513 bytes
+(630.6 MiB); Whisper downloads 375,501,079 bytes (358.1 MiB). Allow at least
+1.5 GiB / 1 GiB free space respectively for installation staging. Model sizes are
+not RAM requirements: benchmark load, sampled process RSS and latency on your PC.
+Parakeet weights require CC-BY-4.0 attribution to NVIDIA; both catalogs preserve
+upstream license provenance. Farsi is **not** supported by these English-only profiles.
+
+Use `install-recognizer BACKEND --from-directory PATH` for offline import of the
+catalog filenames, and `remove-recognizer BACKEND` to remove only that model.
+Acquisition is explicit and integrity checked; loading never downloads or falls back
+to a service. Missing models produce a recovery command before any audio opens.
+Weights and WAV files must remain outside source control.
+
+The `quiet-final` preset was selected on DiPCo development audio for Parakeet:
+24 dB fixed gain without WebRTC, VAD threshold 0.3 and 1.2-second silence.
+Use `--recognizer parakeet-v2 --preset quiet-final` with replay or setup only
+when your input is similarly quiet; verify clipping and nearby/far speech.
+It does not select or install a recognizer automatically, and no household
+hardware gate is passed by this preset.
+
+See the [DiPCo accuracy study](dipco-accuracy.md) for the comparison protocol and
+its distinction between exact-boundary recognizer WER and endpointed pipeline WER.
+
+## Baseline Model Details
 
 Version 2 replaces the 20M recognizer from version 1, which dropped opening words even when given
 the full audio without VAD or input processing. Updating requires an explicit download/import of

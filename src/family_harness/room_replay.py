@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from family_harness.room import DeterministicResponder, RoomEvent, RoomManager
-from family_harness.speech import SPEECH_RATE, SpeechTurn
+from family_harness.speech import SPEECH_RATE, SpeechTurn, replay_tail_seconds
 
 
 class ReplayHarness:
@@ -126,6 +126,7 @@ class RoomSpeechReplay:
             self.voice.stt,
             self._event,
             completion_silence=self.settings.silence,
+            finalizer=getattr(self.voice, "finalizer", None),
         )
         self.turn.utterance_id = f"utterance-{self.sequence}"
 
@@ -177,7 +178,8 @@ class RoomSpeechReplay:
 
     def finish(self):
         # A short synthetic tail lets VAD release; it is reported separately.
-        self.accept(np.zeros(SPEECH_RATE, np.float32))
+        self.synthetic_tail_seconds = replay_tail_seconds(self.settings.silence)
+        self.accept(np.zeros(int(SPEECH_RATE * self.synthetic_tail_seconds), np.float32))
         self.turn.finish(self.offset / SPEECH_RATE, "replay_eof")
         self._record_turn()
         self.harness.tick(self.offset / SPEECH_RATE + 0.5)
@@ -234,7 +236,7 @@ def replay_wav(path: Path, voice, *, seconds: float | None = None, include_text=
     return {
         **harness.report(include_text=include_text),
         "file_audio_seconds": frames / rate,
-        "synthetic_tail_seconds": 1,
+        "synthetic_tail_seconds": speech.synthetic_tail_seconds,
         "speech_processing_real_time_factor": (time.perf_counter() - before) / (frames / rate),
         "first_partial_audio_ms": distribution(speech.latencies),
         "completion_after_vad_ms": distribution(speech.completion_latencies),

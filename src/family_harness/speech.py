@@ -16,6 +16,7 @@ from family_harness.errors import SetupError
 
 SPEECH_RATE = 16000
 COMPLETION_SILENCE = 0.6
+VAD_RELEASE_ALLOWANCE = 0.7
 RECOGNIZER_LEAD_IN = 0.8
 RESPONSE_TEXT = "The local English voice test is complete. Please check the transcript on screen."
 
@@ -46,7 +47,15 @@ VOICE_PRESETS = {
     "close-talk-beam": VoiceSettings(processing=False, decoding="modified_beam_search"),
     "quiet-room": VoiceSettings(processing=False, gain_db=36, silence=0.9),
     "quiet-close-talk": VoiceSettings(processing=True, gain_db=12, silence=0.9),
+    "quiet-final": VoiceSettings(
+        processing=False, gain_db=24, vad_threshold=0.3, silence=1.2,
+    ),
 }
+
+
+def replay_tail_seconds(silence: float) -> float:
+    # Silero can retain activity for ~560 ms after waveform silence at high gain.
+    return max(1, silence + VAD_RELEASE_ALLOWANCE)
 
 
 class ActivityDetector(Protocol):
@@ -56,6 +65,10 @@ class ActivityDetector(Protocol):
 class StreamingRecognizer(Protocol):
     def accept(self, samples: np.ndarray) -> str: ...
     def finish(self) -> str: ...
+
+
+class FinalRecognizer(Protocol):
+    def decode(self, samples: np.ndarray) -> str: ...
 
 
 class Synthesizer(Protocol):
@@ -170,10 +183,17 @@ class SpeechTurn:
         language: str = "en",
         processor: SpeechProcessor | None = None,
         completion_silence: float = COMPLETION_SILENCE,
+        finalizer: FinalRecognizer | None = None,
+        defer_finalization: bool = False,
     ):
         self.vad, self.stt, self.emit = vad, stt, emit
         self.processor = processor
         self.completion_silence = completion_silence
+        self.finalizer = finalizer
+        self.defer_finalization = defer_finalization
+        self.final_samples: list[np.ndarray] = []
+        self.final_sample_count = 0
+        self.candidate_end: float | None = None
         self.processor_origin: float | None = None
         self.processed_samples = 0
         self.speech_active = False
@@ -188,7 +208,7 @@ class SpeechTurn:
         self.candidate_latency: float | None = None
 
     def _transcript(self, text: str, end: float, final: bool, reason: str | None = None):
-        if text != self.text or final:
+        if text != self.text or final or (self.finalizer is not None and not self.revision):
             self.revision += 1
             self.text = text
             self.emit(
@@ -206,6 +226,10 @@ class SpeechTurn:
             )
 
     def _recognize(self, samples: np.ndarray, start: float) -> float:
+        if self.finalizer and self.final_sample_count < SPEECH_RATE * 30:
+            bounded = samples[: SPEECH_RATE * 30 - self.final_sample_count].copy()
+            self.final_samples.append(bounded)
+            self.final_sample_count += len(bounded)
         end = start + len(samples) / SPEECH_RATE
         speech = self.vad.accept(samples)
         self.speech_active = speech
@@ -228,6 +252,8 @@ class SpeechTurn:
     def accept(self, samples: np.ndarray, start: float) -> bool:
         if self.ended:
             return True
+        if self.candidate_end is not None:
+            return True
         if self.processor:
             if self.processor_origin is None:
                 self.processor_origin = start
@@ -237,10 +263,10 @@ class SpeechTurn:
         if not len(samples):
             return False
         end = self._recognize(samples, start)
-        # A noise/quiet-input VAD activation with no words must not close the mic
-        # before the person has a chance to speak. The overall trial stays bounded.
+        # Streaming-only trials require words. A finalizer can recover speech
+        # missing from the draft, so it can complete after VAD activity alone.
         if (
-            self.text
+            (self.text or self.finalizer is not None)
             and self.last_speech is not None
             and end - self.last_speech >= self.completion_silence
         ):
@@ -255,7 +281,9 @@ class SpeechTurn:
                 }
             )
             before = time.perf_counter()
-            self.finish(end, "silence_candidate")
+            self.candidate_end = end
+            if not self.defer_finalization:
+                self.finish(end, "silence_candidate")
             self.candidate_latency = (end - self.last_speech) * 1000 + (
                 time.perf_counter() - before
             ) * 1000
@@ -272,9 +300,22 @@ class SpeechTurn:
                     )
                     self.processed_samples += len(tail)
             # No hallucinated transcript for a silent test.
-            text = self.stt.finish().strip() if self.started is not None else ""
+            text = ""
+            before = time.perf_counter()
+            if self.started is not None:
+                text = (
+                    self.finalizer.decode(np.concatenate(self.final_samples)).strip()
+                    if self.finalizer and self.final_sample_count
+                    else self.stt.finish().strip()
+                )
             self._transcript(text, end, True, reason)
             self.ended = True
+            self.final_samples.clear()
+            if self.defer_finalization and self.candidate_end is not None:
+                self.candidate_latency = (
+                    (self.candidate_end - self.last_speech) * 1000
+                    + (time.perf_counter() - before) * 1000
+                )
 
 
 class SherpaVad:
@@ -383,8 +424,12 @@ class SherpaTts:
 class LocalVoice:
     """Loads local paths only. No model SDK download helpers or network fallback."""
 
-    def __init__(self, profile: Path, settings: VoiceSettings | None = None):
+    def __init__(
+        self, profile: Path, settings: VoiceSettings | None = None,
+        finalizer: FinalRecognizer | None = None,
+    ):
         self.settings = settings or VoiceSettings()
+        self.finalizer = finalizer
         try:
             import sherpa_onnx
 
@@ -409,6 +454,8 @@ class LocalVoice:
         self.vad.accept(silence)
         self.stt.accept(silence)
         self.stt.finish()
+        if self.finalizer:
+            self.finalizer.decode(silence)
         self.tts.synthesize("Ready.")
         # Discard warm-up state, retain the loaded recognizer/models.
         self.stt.reset()

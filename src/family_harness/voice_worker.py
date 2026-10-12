@@ -26,6 +26,24 @@ def public_report(result: dict) -> dict:
 def execute(request: dict, send=emit) -> dict:
     store = ModelStore(Path(request["models"]))
     kind = request["kind"]
+    if kind in ("recognizer_install", "recognizer_remove"):
+        from family_harness.asr import recognizer_store
+
+        selected = recognizer_store(request["recognizer"], store.root)
+        try:
+            if kind == "recognizer_remove":
+                selected.remove()
+                return {"kind": kind, "status": "removed"}
+            source = Path(request["source"]) if request.get("source") else None
+            result = selected.install(source, lambda event: send({"type": "progress", **event}))
+            return {"kind": kind, **result}
+        except SetupError as exc:
+            raise SetupError(
+                "recognizer_invalid", f"The {request['recognizer']} model operation failed.",
+                "Check disk space, permissions and the pinned import files. "
+                f"Retry voice install-recognizer {request['recognizer']} in the same --models "
+                "directory. The baseline English profile is unchanged; audio is off.",
+            ) from exc
     if kind in ("voice_install", "voice_import"):
         source = Path(request["source"]) if kind == "voice_import" else None
         result = store.install(source, lambda event: send({"type": "progress", **event}))
@@ -45,7 +63,16 @@ def execute(request: dict, send=emit) -> dict:
             voice = LocalVoice(store.profile, VOICE_PRESETS[request["preset"]])
         else:
             voice = LocalVoice(store.profile)
+        backend = request.get("recognizer", "zipformer")
+        if backend != "zipformer":
+            from family_harness.asr import load_recognizer, recognizer_catalog
+
+            voice.finalizer = load_recognizer(backend, store.root)
+            result_catalog = recognizer_catalog(backend)
+        else:
+            result_catalog = None
         result = {"kind": kind, "load_seconds": round(time.perf_counter() - before, 3)}
+        result.update(recognizer=backend, recognizer_catalog=result_catalog)
         send({"type": "progress", "phase": "warming", "seconds": 0, "duration": 1})
         result.update(voice.warm())
         if "preset" in request:
@@ -121,7 +148,10 @@ def main() -> None:
         emit({"type": "error", "error": exc.as_dict()})
         sys.exit(1)
     except Exception as exc:
-        if request.get("kind") in ("voice_install", "voice_import", "voice_remove"):
+        if request.get("kind") in (
+            "voice_install", "voice_import", "voice_remove",
+            "recognizer_install", "recognizer_remove",
+        ):
             error = SetupError(
                 "model_install_failed",
                 "The model operation could not finish.",

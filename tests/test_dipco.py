@@ -10,8 +10,10 @@ from family_harness.dipco import (
     aggregate,
     annotations,
     error_counts,
+    evaluate,
     evaluate_continuous,
     evaluate_events,
+    evaluate_recognizer,
     evaluate_utterances,
     inventory,
     normalize,
@@ -142,6 +144,18 @@ def test_continuous_replay_keeps_multiple_utterances_on_source_timeline(tmp_path
     assert report["status"] == "closed" and report["file_audio_seconds"] == 4
 
 
+def test_batch_finals_replace_drafts_through_the_room_event_contract(tmp_path):
+    item = fixture_dataset(tmp_path)
+    voice = FakeVoice()
+    audio = []
+    voice.finalizer = SimpleNamespace(decode=lambda s: audio.append(s.copy()) or "better final")
+    report = replay_wav(item["path"], voice, include_text=True)
+    assert len(audio) == 2
+    assert all(t["text"] == "better final" for t in report["utterances"])
+    assert report["commands"]["response_requested"] == 2
+    assert all(t["candidate"] for t in report["utterances"])
+
+
 def test_silent_replay_cannot_make_a_turn_and_utterance_report_excludes_text(tmp_path):
     item = fixture_dataset(tmp_path)
     report = evaluate_utterances(item, FakeVoice())
@@ -151,6 +165,32 @@ def test_silent_replay_cannot_make_a_turn_and_utterance_report_excludes_text(tmp
     write_wav(item["path"], np.zeros(16000, np.float32))
     replay = replay_wav(item["path"], FakeVoice())
     assert not replay["utterances"] and not replay["responses"]
+
+
+def test_recognizer_scoring_uses_full_exact_bounds_without_vad_or_neighbor_audio(tmp_path):
+    item = fixture_dataset(tmp_path)
+    received = []
+    engine = SimpleNamespace(decode=lambda samples: received.append(samples.copy()) or "hello room")
+    report = evaluate_recognizer(item, engine)
+    assert report["all"]["wer"] == 0
+    assert len(received) == 2 and all(len(s) == 3200 for s in received)
+    assert not report["vad_gating"] and not report["early_endpointing"]
+    assert report["context_seconds"] == 0
+    assert "hello" not in json.dumps(report)
+
+
+def test_recognizer_evaluation_dispatch_needs_no_baseline_voice_or_devices(tmp_path, monkeypatch):
+    fixture_dataset(tmp_path)
+    engine = SimpleNamespace(decode=lambda s: "hello room")
+    monkeypatch.setattr("family_harness.asr.load_recognizer", lambda backend, root: engine)
+    result = evaluate(
+        tmp_path, tmp_path / "models", mode="recognizer", recognizer="parakeet-v2",
+        limit=1, settings=VoiceSettings(processing=False), progress=lambda s: None,
+    )
+    assert result["recognizer"] == "parakeet-v2" and result["schema_version"] == 2
+    assert result["profile_id"] is None and result["model_assets"] == []
+    assert result["recordings"][0]["score"]["all"]["utterances"] == 1
+    assert result["recordings"][0]["score"]["all"]["wer"] == 0
 
 
 def test_replay_detects_truncated_or_unsupported_audio(tmp_path):
@@ -168,6 +208,15 @@ def test_continuous_prefix_has_explicit_duration_and_closes_session(tmp_path):
     assert len(report["utterances"]) == 1
     with pytest.raises(ValueError, match="duration"):
         replay_wav(item["path"], FakeVoice(), seconds=0)
+
+
+def test_long_silence_preset_extends_bounded_replay_tail(tmp_path):
+    item = fixture_dataset(tmp_path)
+    voice = FakeVoice()
+    voice.settings = VoiceSettings(processing=False, silence=2)
+    result = replay_wav(item["path"], voice)
+    assert result["synthetic_tail_seconds"] == 2.7
+    assert result["file_audio_seconds"] == 4 and result["status"] == "closed"
 
 
 def test_continuous_close_talk_does_not_claim_identity_filtering(tmp_path):

@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
@@ -85,6 +87,74 @@ def test_silence_suppresses_recognizer_hallucinations():
             "reason": "trial_limit",
         }
     ]
+
+
+def test_final_recognizer_corrects_drafts_once_with_bounded_conditioned_audio():
+    events, received = [], []
+    finalizer = SimpleNamespace(
+        decode=lambda audio: received.append(audio.copy()) or "correct final"
+    )
+    stt = FakeStt()
+    turn = SpeechTurn(
+        FakeVad(), stt, events.append, finalizer=finalizer, processor=GainSpeechInput(6),
+    )
+    for i in range(100):
+        if turn.accept(np.full(160, .1, np.float32), i / 100):
+            break
+    turn.finish(2, "replay_eof")
+    assert turn.text == "correct final" and stt.finished == 0
+    assert len(received) == 1 and not turn.final_samples
+    np.testing.assert_allclose(received[0], .1 * 10 ** (6 / 20), rtol=1e-6)
+    finals = [e for e in events if e.get("final")]
+    assert len(finals) == 1 and finals[0]["reason"] == "silence_candidate"
+
+
+def test_final_recognizer_can_finish_without_draft_but_never_without_vad():
+    for activity in (0, 10):
+        received, events = [], []
+        empty = SimpleNamespace(accept=lambda s: "", finish=lambda: "")
+        finalizer = SimpleNamespace(decode=lambda s, r=received: r.append(s) or "recognized")
+        turn = SpeechTurn(FakeVad(activity), empty, events.append, finalizer=finalizer)
+        for i in range(100):
+            if turn.accept(np.ones(160, np.float32), i / 100):
+                break
+        turn.finish(1, "replay_eof")
+        assert bool(received) == bool(activity)
+        assert bool(turn.text) == bool(activity)
+        if activity:
+            transcripts = [e for e in events if e["type"] == "transcript"]
+            assert not transcripts[0]["final"] and transcripts[0]["text"] == ""
+            assert transcripts[-1]["final"] and transcripts[-1]["revision"] == 2
+
+
+def test_deferred_finalization_stops_accepting_until_explicit_finish():
+    received = []
+    turn = SpeechTurn(
+        FakeVad(), FakeStt(), lambda e: None, defer_finalization=True,
+        finalizer=SimpleNamespace(decode=lambda s: received.append(s) or "final"),
+    )
+    for i in range(100):
+        if turn.accept(np.zeros(160, np.float32), i / 100):
+            break
+    assert not received and not turn.ended and turn.candidate_end is not None
+    count = turn.final_sample_count
+    assert turn.accept(np.ones(160, np.float32), 1)
+    assert turn.final_sample_count == count
+    turn.finish(turn.candidate_end, "silence_candidate")
+    assert len(received) == 1 and turn.ended and turn.candidate_latency >= 600
+
+
+def test_final_audio_memory_never_exceeds_30_seconds():
+    received = []
+    turn = SpeechTurn(
+        FakeVad(100), FakeStt(), lambda e: None,
+        finalizer=SimpleNamespace(decode=lambda s: received.append(s) or "final"),
+    )
+    for i in range(35):
+        turn.accept(np.ones(16000, np.float32), i)
+    assert turn.final_sample_count == 30 * 16000
+    turn.finish(35, "segment_limit")
+    assert len(received[0]) == 30 * 16000
 
 
 @pytest.mark.parametrize("rate", [8000, 44100, 48000])
@@ -286,6 +356,7 @@ def test_recognizer_lead_in_is_restored_after_warm_up_without_discarding_real_au
     )
     stt = SherpaStt(runtime, tmp_path)
     voice = LocalVoice.__new__(LocalVoice)
+    voice.finalizer = None
     voice.stt = stt
     voice.vad = SimpleNamespace(
         accept=lambda samples: None, detector=SimpleNamespace(reset=lambda: None)

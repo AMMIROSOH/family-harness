@@ -18,7 +18,13 @@ import psutil
 from family_harness.audio import BUFFER_FRAMES, AudioClock, AudioFrame, dbfs, format_for
 from family_harness.devices import resolve
 from family_harness.errors import SetupError
-from family_harness.speech import COMPLETION_SILENCE, RESPONSE_TEXT, SPEECH_RATE, SpeechTurn
+from family_harness.speech import (
+    COMPLETION_SILENCE,
+    RESPONSE_TEXT,
+    SPEECH_RATE,
+    SpeechTurn,
+    replay_tail_seconds,
+)
 
 CAPTURE_SECONDS = 20
 
@@ -136,6 +142,7 @@ def capture(request: dict, devices, sd, voice, emit: Callable, metrics: Measurem
     turn = SpeechTurn(
         voice.vad, voice.stt, emit, processor=voice.input_processor,
         completion_silence=getattr(getattr(voice, "settings", None), "silence", COMPLETION_SILENCE),
+        finalizer=getattr(voice, "finalizer", None), defer_finalization=True,
     )
     clock = AudioClock()
     processed = 0
@@ -198,7 +205,14 @@ def capture(request: dict, devices, sd, voice, emit: Callable, metrics: Measurem
     finally:
         stream.close()
     if not turn.ended:
-        turn.finish(processed / SPEECH_RATE, "trial_limit")
+        if getattr(voice, "finalizer", None):
+            emit({"type": "progress", "phase": "finalizing", "seconds": 0, "duration": 1})
+        before = time.perf_counter()
+        turn.finish(
+            processed / SPEECH_RATE,
+            "silence_candidate" if turn.candidate_end is not None else "trial_limit",
+        )
+        metrics.decode_ms.append((time.perf_counter() - before) * 1000)
     result = turn_result(turn, processed / SPEECH_RATE, lag_ms, "native")
     result["capture_sample_rate"] = rate
     return result
@@ -258,6 +272,7 @@ def replay(path: Path, voice, emit: Callable, metrics: Measurements) -> dict:
     turn = SpeechTurn(
         voice.vad, voice.stt, emit, processor=voice.input_processor,
         completion_silence=getattr(getattr(voice, "settings", None), "silence", COMPLETION_SILENCE),
+        finalizer=getattr(voice, "finalizer", None),
     )
     processed = 0
     for offset in range(0, len(samples), 160):
@@ -268,12 +283,14 @@ def replay(path: Path, voice, emit: Callable, metrics: Measurements) -> dict:
             break
     # Trailing silence allows the same candidate detector to finish a replay.
     if not turn.ended:
-        for _ in range(100):
+        for _ in range(int(replay_tail_seconds(turn.completion_silence) * 100)):
             done = process_chunk(turn, np.zeros(160, np.float32), processed / SPEECH_RATE, metrics)
             processed += 160
             if done:
                 break
+    before = time.perf_counter()
     turn.finish(processed / SPEECH_RATE, "replay_eof")
+    metrics.decode_ms.append((time.perf_counter() - before) * 1000)
     result = turn_result(turn, processed / SPEECH_RATE, 0, "file")
     result["file_audio_seconds"] = round(len(samples) / SPEECH_RATE, 3)
     return result

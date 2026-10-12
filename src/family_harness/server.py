@@ -106,7 +106,7 @@ class SetupHandler(BaseHTTPRequestHandler):
                         "token": self.server.token,
                         "config": config,
                         "config_path": str(self.server.store.path),
-                        "voice": self.server.audio.models.status(),
+                        "voice": self.server.audio.voice_status(),
                     },
                 )
             elif url.path == "/api/devices":
@@ -195,8 +195,10 @@ def create_server(
     path: Path | None = None,
     audio: AudioControl | None = None,
     models: Path | None = None,
+    recognizer: str = "zipformer",
+    preset: str = "room",
 ) -> SetupServer:
-    control = audio or AudioControl(models=models)
+    control = audio or AudioControl(models=models, recognizer=recognizer, preset=preset)
     try:
         try:
             return SetupServer(
@@ -222,8 +224,10 @@ def serve(
     path: Path | None = None,
     open_browser: bool = True,
     models: Path | None = None,
+    recognizer: str = "zipformer",
+    preset: str = "room",
 ) -> None:
-    server = create_server(port, path, models=models)
+    server = create_server(port, path, models=models, recognizer=recognizer, preset=preset)
     url = f"http://127.0.0.1:{server.server_address[1]}/"
     print(f"Family Harness audio setup: {url}", flush=True)
     print(

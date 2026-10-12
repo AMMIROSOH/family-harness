@@ -189,6 +189,13 @@ function renderVoiceState(voice) {
     voice.upgrade_available ?
     "An English profile update is available to improve missing opening words. Download or import it before a voice trial. Your previous profile is retained; audio is off." :
     "English profile is not installed. Download or import it to run a voice trial.";
+  if (voice.final_recognizer && voice.final_recognizer !== "zipformer") {
+    $("voice-status").textContent += voice.final_recognizer_state?.installed ?
+      ` Final recognizer: ${voice.final_recognizer}.` :
+      ` Final recognizer ${voice.final_recognizer} is not installed. Run voice install-recognizer ${voice.final_recognizer} before a trial.`;
+  }
+  if (voice.speech_preset && voice.speech_preset !== "room")
+    $("voice-status").textContent += ` Microphone preset: ${voice.speech_preset}.`;
   $("voice-catalog").textContent = JSON.stringify(voice, null, 2);
 }
 const voiceInstructions = {
@@ -197,6 +204,7 @@ const voiceInstructions = {
   loading: "Checking integrity and loading local models. Audio is off.",
   warming: "Warming local models before use. Audio is off.",
   listening: "Speak now: say one English sentence, then pause. Microphone is on, speaker is off.",
+  finalizing: "Microphone is off. Finalizing the local transcript.",
   synthesizing: "Microphone is off. Preparing the fixed local test response.",
   playback: "Microphone is off. Listen for the test voice. Stop / mute ends playback.",
 };

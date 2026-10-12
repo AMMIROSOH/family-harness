@@ -36,7 +36,7 @@ Overlapping speech can produce incomplete or uncertain attribution. The system m
 
 The initial profile runs capture, speech processing, identity, room coordination, and playback on the same PC. After dependencies/models are installed, inference must work offline without a provider account. A Core i5-class PC with 16 GB RAM is a benchmark target; verify the exact hardware before claiming support.
 
-Keep providers behind small interfaces with explicit capabilities such as language, execution location, streaming, diarization, enrollment, and cancellation. Larger local/GPU models, home-server execution, cloud adapters, and additional language profiles including Farsi are TODO extensions. Language support must not be hard-wired to CPU/GPU deployment.
+Keep providers behind small interfaces with explicit capabilities such as language, execution location, streaming, diarization, enrollment, and cancellation. Optional CPU Parakeet/Whisper whole-utterance finals now sit behind a separate recognizer interface while Zipformer provides streaming drafts. GPU profiles, home-server execution, cloud adapters, and additional language profiles including Farsi are TODO extensions. Language support must not be hard-wired to CPU/GPU deployment.
 
 Keep room listening and activation outside long-running agent tasks. Task execution must not block audio interruption handling. Start with a small deployment and avoid adding a distributed system before it is needed.
 

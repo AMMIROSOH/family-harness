@@ -1,5 +1,10 @@
 # DiPCo subset evaluation, 2026-10-12
 
+**Historical Zipformer baseline.** A subsequent [accuracy study](dipco-accuracy.md)
+audits scoring, compares stronger local models and records fresh validation results.
+The numbers below retain the original fixed one-second replay tail and original
+presets; do not treat them as the latest best result or mix them with ASR-only WER.
+
 This is a local development/validation result for M1.4 and the current M1.3
 English CPU profile. It does not complete the household audio/voice gates.
 The [evaluation guide](room-manager.md) describes commands, normalization,

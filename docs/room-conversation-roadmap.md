@@ -97,8 +97,11 @@ M1.4's software replay exit gate passes on the supplied DiPCo subset: all 794
 eligible annotation-driven turns assemble correctly with duplicate/late-event
 and closure checks. Simulated cancellation and behavior tests cover output state.
 M1.3 speech was evaluated separately and remains poor on far microphones; a
-development-selected gain preset worsens overall held-out clip WER. See the
-[full evidence and limits](dipco-evaluation.md). Dataset replay does not complete
+Zipformer gain preset worsened overall held-out clip WER. The follow-up
+[accuracy study](dipco-accuracy.md) adds optional Parakeet/Whisper finals,
+separates ASR-only scoring from endpointed scoring, and validates frozen
+settings on S08 and fresh S06 data. See the
+[historical evidence](dipco-evaluation.md). Dataset replay does not complete
 household hardware, identity, or interruption gates.
 
 ### First-install packaging and operation

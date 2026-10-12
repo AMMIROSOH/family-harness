@@ -66,8 +66,10 @@ utterances. It feeds onset audio before VAD confirmation, uses a configurable
 silence candidate, and caps an uninterrupted segment at 30 seconds.
 Forced segment boundaries reset VAD state as well as recognizer context; the
 upstream duration setting alone is a soft limit and can grow its audio buffer.
-Idle recognizer streams reset every five seconds. EOF appends one second of synthetic
-silence. Partial/completion timings are measured against detected VAD activity,
+Idle recognizer streams reset every five seconds. EOF appends at least one second of synthetic
+silence, extended to completion silence plus 700 ms for VAD release when necessary.
+Partial/completion timings
+are measured against detected VAD activity,
 not human word boundaries. The processing real-time factor includes file reading,
 resampling, input conditioning, speech decoding, and manager processing; it
 excludes model loading and does not simulate hardware scheduling.
@@ -93,7 +95,9 @@ separate close-talk microphones and room array channels, with per-device
 timestamps and public participant labels. Its development/evaluation sessions
 are respected. The supplied local subset has S02 P05/U01.CH1 development audio
 and S08 U01.CH1 evaluation audio. These are single channels, not beamformed arrays.
-No additional DiPCo data was downloaded for this work.
+The follow-up [accuracy study](dipco-accuracy.md) adds S09 U04 development audio,
+S06 U04 fresh validation audio, and S08 P25 close-talk audio. Additional downloads
+total 112,697,364 bytes including annotations, below the requested 300 MB limit.
 
 ```sh
 uv run family-harness room evaluate E:/Datasets/DiPCo --mode events --report .local/manager-events.json
@@ -109,10 +113,15 @@ never opens audio devices. Models must be explicitly installed/imported first.
   stale-revision, and post-close events. It verifies exact turn assembly and
   closure with simulated response cancellation.
 - `utterances` uses the annotated device-specific boundaries with 200 ms lead-in,
-  150 ms trailing context, and a maximum one-second synthetic silence tail. Each
+  150 ms trailing context, and a synthetic silence tail of at least one second
+  (completion silence plus 700 ms for VAD release). Each
   clip runs the M1.3 one-utterance path, including premature completion behavior.
   Close-talk scores only its named participant. `--limit` samples evenly through
   each speaker's recording; omit it for all eligible annotations.
+- `recognizer` decodes the **entire exact annotated interval** without neighboring
+  context, VAD suppression, or early endpointing. It isolates acoustic recognition
+  from pipeline misses. It uses the same reference exclusions, normalization and
+  word-weighted edit counts; it is not autonomous conversation accuracy.
 - `continuous` replays the waveform without reference segmentation or speaker
   labels, scoring all annotated speakers even when a close-talk file contains
   cross-talk. Its chronological single-stream WER is a diagnostic measure, not
@@ -151,6 +160,22 @@ uv run family-harness voice replay short-quiet.wav --preset quiet-room --report 
 
 Advanced comparisons can override `--gain-db` and `--silence` for room replay.
 `room-beam` and `close-talk-beam` are comparison presets, not selected winners.
+
+Install optional final models explicitly with `voice install-recognizer parakeet-v2`
+or `whisper-small-en`. `--recognizer` selects the final model independently of the
+microphone preset, for WAV replay, clip scoring and continuous scoring. Zipformer
+remains the default and supplies drafts when a stronger final model is selected.
+
+```sh
+uv run family-harness room evaluate E:/Datasets/DiPCo --mode recognizer --recognizer parakeet-v2 --preset close-talk --gain-db 24 --split eval --report .local/eval-asr.json
+uv run family-harness room replay conversation.wav --recognizer parakeet-v2 --preset close-talk --report .local/stronger-replay.json
+```
+
+Exact-boundary ASR scores and endpointed scores are different measurements; compare
+backends only within the same protocol and selected annotation indices. Excluded
+regions and overlapping speakers still make chronological continuous WER unsuitable
+as the primary accuracy number. No official meeting scorer or speaker separation
+is implemented here.
 
 The software replay gate can pass while recognition quality is poor. Hardware
 capture/playback, room echo, actual speaker identity, and interruptions remain

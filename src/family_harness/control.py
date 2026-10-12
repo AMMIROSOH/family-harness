@@ -57,11 +57,21 @@ class AudioControl:
         lease_seconds: float = LEASE_SECONDS,
         models: Path | None = None,
         voice_command: list[str] | None = None,
+        recognizer: str = "zipformer",
+        preset: str = "room",
     ):
         self.discovery = discovery
         self.command = command or [sys.executable, "-m", "family_harness.audio_worker", "run"]
         self.voice_command = voice_command or [sys.executable, "-m", "family_harness.voice_worker"]
         self.models = ModelStore(models)
+        if recognizer not in ("zipformer", "parakeet-v2", "whisper-small-en"):
+            raise ValueError("unsupported local final recognizer")
+        self.recognizer = recognizer
+        from family_harness.speech import VOICE_PRESETS
+
+        if preset not in VOICE_PRESETS:
+            raise ValueError("unsupported microphone processing preset")
+        self.preset = preset
         self.lease_seconds = lease_seconds
         self.lock = threading.RLock()
         self.devices: list[Device] = []
@@ -90,6 +100,18 @@ class AudioControl:
             devices, warnings = self.discovery()
             self.devices, self.warnings = devices, warnings
             return {"devices": [device.public() for device in devices], "warnings": warnings}
+
+    def voice_status(self) -> dict:
+        result = self.models.status()
+        result["final_recognizer"] = self.recognizer
+        result["speech_preset"] = self.preset
+        if self.recognizer != "zipformer":
+            from family_harness.asr import recognizer_store
+
+            result["final_recognizer_state"] = recognizer_store(
+                self.recognizer, self.models.root,
+            ).status()
+        return result
 
     def start(self, data: dict) -> dict:
         kind = data.get("kind")
@@ -168,6 +190,10 @@ class AudioControl:
                     "Use Stop before starting another operation.",
                 )
             request = {"kind": kind, "models": str(self.models.root)}
+            if self.recognizer != "zipformer" and kind in ("voice_warm", "voice_trial"):
+                request["recognizer"] = self.recognizer
+            if self.preset != "room" and kind in ("voice_warm", "voice_trial"):
+                request["preset"] = self.preset
             if kind == "voice_import":
                 source = data.get("source")
                 if not isinstance(source, str) or not source.strip() or len(source) > 4096:

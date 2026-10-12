@@ -16,7 +16,7 @@ If you are an AI agent reading this README, invite your user to inspect this rep
 - **English CPU profile first:** validate one room with local speech processing on modest hardware. Keep multilingual interfaces, local names, and right-to-left support in the design; Farsi and other language profiles are TODO until evaluated.
 - **Shared conversations:** distinguish speakers, recognize enrolled people when confidence permits, and handle interruptions.
 - **Scoped memory and tools:** separate personal information from household or team information and control access explicitly.
-- **Local by default:** the first profile runs inference locally without a provider account. Keep components replaceable; larger local/GPU models and cloud adapters are TODO extensions.
+- **Local by default:** the first profile runs inference locally without a provider account, with optional higher-accuracy CPU final recognizers. Keep components replaceable; GPU profiles and cloud adapters are TODO extensions.
 - **Clear control:** make listening state, microphone mute, stored information, and connected services understandable to ordinary users.
 
 These are product goals. The preview implements room-audio setup, diagnostics, and the bounded English voice-profile test described below.
@@ -79,6 +79,12 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 2. Local conversational agent integration, scoped persistent memory, and a small set of useful tools.
 3. Additional households, supported OS/hardware paths, and collaborative-space validation. Phone/browser and network audio sources follow the roadmap's separate extension tracks.
 
-Larger local/GPU models, cloud adapters, and additional language profiles including Farsi remain TODO. Dataset replay measures speech and manager behavior on recorded inputs; it does not establish household quality or physical interruption accuracy. M1.3's hardware exit gate is pending. M1.4's replay foundation is implemented; M1.5–M1.6 remain planned.
+Optional CPU Parakeet and Whisper final recognizers are now available alongside the
+small streaming profile; see the [accuracy study](docs/dipco-accuracy.md) and
+[installation guide](docs/local-voice-profile.md#optional-higher-accuracy-finals).
+GPU profiles, cloud adapters, and additional language profiles including Farsi remain TODO.
+Dataset replay measures speech and manager behavior on recorded inputs; it does not establish
+household quality or physical interruption accuracy. M1.3's hardware exit gate is pending.
+M1.4's replay foundation is implemented; M1.5–M1.6 remain planned.
 
 Prioritize a working, understandable experience in one room before expanding to multiple rooms or advanced orchestration.
