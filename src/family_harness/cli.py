@@ -14,13 +14,13 @@ def main() -> None:
         prog="family-harness",
         description=(
             "Family Harness is under development. "
-            "Configure room audio and replay the room manager locally. Live conversations "
-            "are not implemented yet."
+            "Configure room audio, run bounded live voice diagnostics and replay the room "
+            "manager locally. Sustained room conversations are not implemented yet."
         ),
     )
     parser.add_argument("--version", action="version", version=version("family-harness"))
     commands = parser.add_subparsers(dest="command")
-    setup = commands.add_parser("setup", help="Open the localhost room audio setup wizard")
+    setup = commands.add_parser("setup", help="Open the localhost dashboard and voice setup")
     setup.add_argument("--port", type=int, default=8765, help="Local port (0 chooses a free port)")
     setup.add_argument(
         "--no-browser", action="store_true", help="Print the address without opening it"
@@ -191,6 +191,8 @@ def main() -> None:
         action.add_argument("--silence", type=float, help="Completion silence, 0.3-2 seconds")
         action.add_argument("--gain-db", type=float, help="Explicit fixed input gain, 0-36 dB")
         action.add_argument("--seconds", type=float, help="Replay only this continuous WAV prefix")
+    # Omitted setup flags use saved dashboard preferences. Explicit flags override for this launch.
+    setup.set_defaults(recognizer=None, preset=None, speaker_backend=None)
     args = parser.parse_args()
     if args.command == "setup":
         if not 0 <= args.port <= 65535:
@@ -320,7 +322,7 @@ def main() -> None:
                 if args.recognizer == "zipformer":
                     store = ModelStore(args.models)
                     store.verify()
-                    recognizer = StreamingUtteranceRecognizer(store.profile)
+                    recognizer = StreamingUtteranceRecognizer(store.profile / "stt")
                 else:
                     recognizer = load_recognizer(args.recognizer, args.models)
                 result = group_turns(

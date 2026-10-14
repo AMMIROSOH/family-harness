@@ -1,5 +1,6 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
+const controllerId = crypto.randomUUID();
 let token = "", saved = null, jobId = null, results = [], busy = false;
 const labels = {microphone: "Microphone", speaker: "Speaker", noise: "Background noise", duplex: "Duplex audio"};
 
@@ -9,8 +10,12 @@ function showError(error) {
     `${detail.message || "Setup could not connect."}\n${detail.recovery || "Reopen the local setup address. Audio tests stop when this page disconnects."}`;
   $("error").hidden = false;
 }
+function showPeopleError(error) {
+  showError(error);
+  $("people-instruction").textContent = `Preview failed. Audio is off.\n${$("error").textContent}`;
+}
 async function api(path, data) {
-  const options = {headers: {"X-Setup-Token": token}};
+  const options = {headers: {"X-Setup-Token": token, "X-Controller-ID": controllerId}};
   if (data !== undefined) {
     options.method = "POST";
     options.headers["Content-Type"] = "application/json";
@@ -30,7 +35,7 @@ function selection() {
 }
 function setBusy(value) {
   busy = value;
-  document.querySelectorAll(".test, .voice-action, .people-action, .policy-action, .interruption-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value);
+  document.querySelectorAll(".test, .voice-action, .people-action, .policy-action, .interruption-action, #refresh, #save, #people-save, input, select").forEach((item) => item.disabled = value && !item.closest(".tuning"));
   $("people-save").disabled = value || !candidateJobId;
   $("listening").textContent = value ? "Audio test active · use Stop / mute anytime" : "Microphone off · no test running";
   if (!value) {
@@ -127,7 +132,7 @@ async function start(kind) {
   setBusy(true);
   try {
     const job = await api("/api/tests", {...selection(), kind});
-    document.querySelector(".test-display").scrollIntoView({behavior: "smooth", block: "center"});
+    document.dispatchEvent(new CustomEvent("audio-test-start", {detail: kind}));
     jobId = job.id; poll(jobId);
   } catch (error) { setBusy(false); showError(error); }
 }
@@ -169,7 +174,7 @@ $("setup-form").addEventListener("submit", async (event) => {
   finally { $("save").disabled = busy; }
 });
 window.addEventListener("pagehide", () => {
-  if (jobId) fetch("/api/stop", {method: "POST", headers: {"X-Setup-Token": token, "Content-Type": "application/json"}, body: "{}", keepalive: true}).catch(() => {});
+  if (jobId) fetch("/api/stop", {method: "POST", headers: {"X-Setup-Token": token, "X-Controller-ID": controllerId, "Content-Type": "application/json"}, body: "{}", keepalive: true}).catch(() => {});
 });
 let configPath = "";
 (async () => {
@@ -184,7 +189,13 @@ let configPath = "";
       $("speaker-confirmed").checked = saved.speaker_confirmed;
       $("active-room").textContent = saved.room_name; results = saved.diagnostics || []; summary();
     }
-    await refresh(true); renderResults();
+    if (state.job?.status === "running") {
+      const devices = state.devices || [];
+      deviceOptions("input-device", devices.filter(d => d.direction === "input"), state.job.request.input_id || saved?.input.id);
+      deviceOptions("output-device", devices.filter(d => d.direction === "output"), state.job.request.output_id || saved?.output.id);
+    } else await refresh(true);
+    renderResults();
+    document.dispatchEvent(new CustomEvent("dashboard-ready", {detail: state}));
   } catch (error) { showError(error); }
 })();
 
@@ -397,7 +408,19 @@ function renderPeople(state) {
       catch (error) { showError(error); }
       finally { setBusy(false); }
     });
-    row.append(label, button); $("people-list").append(row);
+    const rename = document.createElement("button"), input = document.createElement("input");
+    input.value = person.name; input.maxLength = 120; input.required = true; input.dir = "auto";
+    input.setAttribute("aria-label", `New name for ${person.name}`);
+    rename.textContent = "Rename"; rename.type = "button"; rename.className = "people-action";
+    rename.addEventListener("click", async () => {
+      if (!input.reportValidity()) return;
+      setBusy(true);
+      try { await api("/api/people", {kind: "people_rename", person_id: person.person_id, name: input.value});
+        renderPeople((await api("/api/state")).people); }
+      catch (error) { showError(error); }
+      finally { setBusy(false); }
+    });
+    row.className = "person-row"; row.append(label, input, rename, button); $("people-list").append(row);
   });
 }
 async function pollPeople(id) {
@@ -417,10 +440,10 @@ async function pollPeople(id) {
     $("people-level").value = listening ? Math.max(0, Math.min(1, ((p.level_dbfs ?? -80) + 80) / 80)) : 0;
     if (job.status === "running") { setTimeout(() => pollPeople(id), 250); return; }
     jobId = null;
-    if (job.status === "error") showError(job.error);
     if (job.status === "completed" && job.request.kind === "people_enroll") candidateJobId = id;
     setBusy(false);
     $("people-instruction").textContent = job.status === "completed" ? "Preview complete. Audio is off." : job.reason || "Preview failed. Audio is off.";
+    if (job.status === "error") showPeopleError(job.error);
     if (job.result) {
       const report = {...job.result, utterances: job.result.utterances?.map(({text, ...turn}) => turn)};
       $("people-diagnostics").textContent = JSON.stringify(report, null, 2);
@@ -449,7 +472,7 @@ document.querySelectorAll(".people-action[data-action]").forEach((button) => but
       name: $("person-name").value, consent: $("person-consent").checked,
       source: $("people-source").value, participation: $("participation").value});
     jobId = job.id; pollPeople(jobId);
-  } catch (error) { setBusy(false); showError(error); }
+  } catch (error) { setBusy(false); showPeopleError(error); }
 }));
 $("people-save").addEventListener("click", async () => {
   setBusy(true);

@@ -13,11 +13,12 @@ from family_harness.voice_worker import emit
 
 def execute(request, send=emit):
     from family_harness.asr import StreamingUtteranceRecognizer, load_recognizer
+    from family_harness.dashboard import worker_settings
     from family_harness.group import SherpaDiarizer, group_turns
     from family_harness.identity import MatchSettings, PeopleStore, SherpaEmbedding, VoiceMatcher
     from family_harness.interruption_trial import TrialSession, capture_interruption
     from family_harness.models import ModelStore
-    from family_harness.speech import VOICE_PRESETS, LocalVoice
+    from family_harness.speech import LocalVoice
     from family_harness.voice_trial import Measurements
 
     if request.get("kind") != "interruption_trial":
@@ -32,14 +33,14 @@ def execute(request, send=emit):
         root = Path(request["models"])
         store = ModelStore(root)
         store.verify()
-        voice = LocalVoice(store.profile, VOICE_PRESETS[request.get("preset", "room")])
+        voice = LocalVoice(store.profile, worker_settings(request))
         provider = SherpaEmbedding(request["backend"], root)
         policy = request["recognition_policy"]
         matcher = VoiceMatcher(provider, PeopleStore(Path(request["people"])).load(),
                                MatchSettings(**policy["settings"]))
         diarizer = SherpaDiarizer(request["backend"], root)
         backend = request.get("recognizer", "zipformer")
-        recognizer = StreamingUtteranceRecognizer(store.profile) if backend == "zipformer" \
+        recognizer = StreamingUtteranceRecognizer(store.profile / "stt") if backend == "zipformer" \
             else load_recognizer(backend, root)
         load_seconds = time.perf_counter() - before
         send({"type": "progress", "phase": "warming", "seconds": 0, "duration": 1})

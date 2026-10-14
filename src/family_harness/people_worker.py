@@ -175,7 +175,7 @@ def execute(request, send=emit):
             if selected == "zipformer":
                 speech = ModelStore(root)
                 speech.verify()
-                recognizer = StreamingUtteranceRecognizer(speech.profile)
+                recognizer = StreamingUtteranceRecognizer(speech.profile / "stt")
             else:
                 recognizer = load_recognizer(selected, root)
         import sounddevice as sd

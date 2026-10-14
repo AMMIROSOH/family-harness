@@ -1,10 +1,13 @@
 # Dashboard delivery roadmap
 
-**Proposed, 2026-10-12. Planning only; application code has not changed.**
+**D1 software preview implemented, 2026-10-12. Later phases remain proposed.**
+See the [delivered dashboard guide](dashboard.md). Simulated/browser/package and
+device-free model checks provide software evidence; household quality and
+physical interruption gates remain pending.
 
 This roadmap creates the application dashboard described in the
-[product plan](dashboard-plan.md). **The first implementation request should start
-D1: Quick Setup and Voice Management, including real live tests and tuning.**
+[product plan](dashboard-plan.md). **D1 delivers Quick Setup and Voice Management,
+including bounded live tests and tuning, as the first software preview.**
 The existing M1.1–M1.6 roadmap remains the record of voice implementation and
 validation. Dashboard phases use D identifiers to keep the two roadmaps separate.
 
@@ -103,11 +106,9 @@ check should turn poor recognition into a claim of dependable personalization.
 | A larger app can break current stop/lease protections | Preserve backend protections, add per-controller ownership, test page closure and multiple tabs before live expansion. |
 | Full application scope can swamp the first useful delivery | Ship only D1's operational sections; later sections follow backend gates. |
 
-## Next implementation request
+## Current delivery
 
-“Implement D1 from `docs/dashboard-roadmap.md`, starting with D1.1 and D1.2,
-and continue through the live Voice Lab, tuning, and validation specified in
-`docs/voice-management-workspace.md`.”
-
-That request would authorize implementation. This planning change creates the
-specification and roadmap only; it does not activate hardware or build the runtime.
+D1's shell, guided voice flow, validated tuning, owner-scoped live telemetry,
+bounded live worker, replay/fixtures, comparisons, numeric export and repair are
+implemented as a diagnostic preview. Windowed identity remains uncertain; real
+household and acoustic evidence must follow the trial guides. D2 has not started.

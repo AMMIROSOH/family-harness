@@ -64,6 +64,7 @@ class AudioControl:
         people_command: list[str] | None = None,
         policy_file: Path | None = None,
         interruption_command: list[str] | None = None,
+        lab_command: list[str] | None = None,
     ):
         self.discovery = discovery
         self.command = command or [sys.executable, "-m", "family_harness.audio_worker", "run"]
@@ -83,6 +84,7 @@ class AudioControl:
         self.interruption_command = interruption_command or [
             sys.executable, "-m", "family_harness.interruption_worker",
         ]
+        self.lab_command = lab_command or [sys.executable, "-m", "family_harness.live_worker"]
         if recognizer not in ("zipformer", "parakeet-v2", "whisper-small-en"):
             raise ValueError("unsupported local final recognizer")
         self.recognizer = recognizer
@@ -192,13 +194,27 @@ class AudioControl:
                 self.job["result"].pop("candidate")
                 self.job["result"]["saved"] = True
                 return {"status": "saved"}
-            if kind == "people_remove":
+            if kind in ("people_remove", "people_rename"):
                 try:
-                    self.people.remove(data.get("person_id", ""))
+                    if kind == "people_remove":
+                        self.people.remove(data.get("person_id", ""))
+                    else:
+                        from dataclasses import replace
+
+                        name = data.get("name")
+                        if not isinstance(name, str) or not 0 < len(name.strip()) <= 120:
+                            raise SetupError("person_name_invalid", "Enter a person's name.",
+                                             "Use 1–120 characters. The voice profile is retained.")
+                        profiles = self.people.load()
+                        profile = next((p for p in profiles
+                                        if p.person_id == data.get("person_id")), None)
+                        if profile is None:
+                            raise ValueError("unknown person")
+                        self.people.save(replace(profile, name=name.strip()))
                 except (ValueError, TypeError, AttributeError) as exc:
                     raise SetupError("invalid_person", "Choose an enrolled person.",
                                      "Refresh setup and retry removal.") from exc
-                return {"status": "removed"}
+                return {"status": "removed" if kind == "people_remove" else "renamed"}
             if kind not in ("speaker_install", "speaker_remove", "segmentation_install",
                             "people_enroll", "people_trial"):
                 raise SetupError("invalid_people_action", "Choose an available people action.",
@@ -231,6 +247,7 @@ class AudioControl:
                 request.update(participation=policy, recognizer=self.recognizer)
                 # Freeze the saved settings for this job, including cross-process CLI edits.
                 request["recognition_policy"] = self.recognition_policies.snapshot()
+            self._options(data, request)
             return self._launch(request, self.people_command, 18 if kind == "people_enroll" else 30,
                                 600 if kind.endswith("install") else 180)
 
@@ -285,6 +302,7 @@ class AudioControl:
                 "position": position,
                 "endpoint_id": self.endpoint_id,
             }
+            self._options(data, request)
             return self._launch(request, self.command, TEST_SECONDS[kind], TEST_SECONDS[kind] + 20)
 
     def start_voice(self, data: dict) -> dict:
@@ -295,6 +313,7 @@ class AudioControl:
             "voice_remove",
             "voice_warm",
             "voice_trial",
+            "recognizer_install", "recognizer_remove", "voice_replay",
         ):
             raise SetupError(
                 "invalid_voice_action",
@@ -315,7 +334,7 @@ class AudioControl:
                 request["recognizer"] = self.recognizer
             if self.preset != "room" and kind in ("voice_warm", "voice_trial"):
                 request["preset"] = self.preset
-            if kind == "voice_import":
+            if kind in ("voice_import", "voice_replay"):
                 source = data.get("source")
                 if not isinstance(source, str) or not source.strip() or len(source) > 4096:
                     raise SetupError(
@@ -324,6 +343,16 @@ class AudioControl:
                         "Use a folder on this PC containing the catalog files.",
                     )
                 request["source"] = source
+            if kind in ("recognizer_install", "recognizer_remove"):
+                from family_harness.dashboard import RECOGNIZERS
+
+                selected = data.get("recognizer")
+                if selected not in RECOGNIZERS[1:]:
+                    raise SetupError("recognizer_invalid", "Choose an optional final recognizer.",
+                                     "Use Parakeet v2 or Whisper small.en.")
+                request["recognizer"] = selected
+                if data.get("source"):
+                    request["source"] = self._source(data["source"])
             if kind == "voice_trial":
                 resolve(self.devices, data.get("input_id"), "input")
                 resolve(self.devices, data.get("output_id"), "output")
@@ -340,11 +369,15 @@ class AudioControl:
                         "endpoint_id": self.endpoint_id,
                     }
                 )
+            self._options(data, request)
+            # Acquisition targets must not be changed by the selected inference backend.
+            if kind in ("recognizer_install", "recognizer_remove"):
+                request["recognizer"] = data["recognizer"]
             return self._launch(
                 request,
                 self.voice_command,
                 20,
-                600 if kind in ("voice_install", "voice_import") else 120,
+                600 if kind in ("voice_install", "voice_import", "recognizer_install") else 120,
             )
 
     def start_interruption(self, data: dict) -> dict:
@@ -370,7 +403,102 @@ class AudioControl:
                            backend=self.speaker_backend, recognizer=self.recognizer,
                            preset=self.preset,
                            recognition_policy=self.recognition_policies.snapshot())
+            self._options(data, request)
             return self._launch(request, self.interruption_command, 20, 180)
+
+    @staticmethod
+    def _source(source):
+        if (not isinstance(source, str) or not source.strip() or len(source) > 4096
+                or source.startswith(("\\\\", "//"))):
+            raise SetupError("invalid_import", "Enter a local path on this PC.",
+                             "Use a bounded local WAV or original catalog model folder.")
+        return source
+
+    def _options(self, data, request):
+        if "position" in data:
+            if data["position"] not in ("near", "far"):
+                raise SetupError("position_invalid", "Choose a nearby or farthest position.",
+                                 "Use the speaking position selector in room setup.")
+            request["position"] = data["position"]
+        owner = data.get("_controller")
+        if owner is not None:
+            if not isinstance(owner, str) or not 16 <= len(owner) <= 100:
+                raise SetupError("controller_invalid", "Reopen the dashboard to control tests.",
+                                 "This page needs a fresh local controller ID.")
+            request["_controller"] = owner
+        if "settings" not in data:
+            return
+        from family_harness.dashboard import settings_error, validate_settings
+
+        try:
+            settings = validate_settings(data["settings"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise settings_error(str(exc)) from exc
+        request.update(preset=settings["preset"], recognizer=settings["recognizer"],
+                       backend=settings["backend"], speech_settings=settings["speech"],
+                       interruption_settings=settings["interruption"],
+                       settings_revision=data.get("settings_revision", 0),
+                       effective_settings=settings)
+        request["settings_scope"] = {
+            "voice_warm": ["preset", "speech", "recognizer"],
+            "voice_trial": ["preset", "speech", "recognizer"],
+            "voice_replay": ["preset", "speech", "recognizer"],
+            "people_enroll": ["backend"],
+            "people_trial": ["backend", "matching", "recognizer", "participation"],
+            "interruption_trial": ["preset", "speech", "recognizer", "backend", "matching",
+                                   "interruption"],
+            "lab_live": list(settings),
+            "lab_replay": ["preset", "speech", "recognizer", "seconds"],
+            "group_replay": ["backend", "matching", "recognizer", "participation"],
+        }.get(request["kind"], [])
+        if request["kind"] in ("people_trial", "interruption_trial", "lab_live", "lab_replay"):
+            request.update(participation=settings["participation"], recognition_policy={
+                "name": settings["recognition_name"], "settings": settings["matching"],
+                "customized": True, "overrides": sorted(settings["matching"]),
+            })
+
+    def start_lab(self, data):
+        from family_harness.dashboard import SCENARIOS
+
+        with self.lock:
+            if self.closed.is_set() or (self.job and self.job["status"] == "running"):
+                raise SetupError("test_running", "Stop the active operation first.",
+                                 "Use Stop all, then explicitly start another take.")
+            kind = data.get("kind")
+            if kind not in ("lab_live", "lab_fixture", "lab_replay", "group_replay"):
+                raise SetupError("lab_invalid", "Choose a supported lab test.",
+                                 "Select a scenario.")
+            request = {"kind": kind, "models": str(self.models.root),
+                       "people": str(self.people.path), "backend": self.speaker_backend,
+                       "recognizer": self.recognizer, "preset": self.preset,
+                       "recognition_policy": self.recognition_policies.snapshot(),
+                       "participation": "all", "endpoint_id": self.endpoint_id}
+            request["room_id"] = data.get("room_id", "unsaved-room")
+            self._options(data, request)
+            seconds = request.get("effective_settings", {}).get("seconds", 60)
+            if kind == "lab_live":
+                scenario = data.get("scenario", "integrated")
+                if scenario not in SCENARIOS:
+                    raise SetupError("lab_invalid", "Choose a supported live scenario.",
+                                     "Use the scenario selector.")
+                if (data.get("echo_confirmed") is not True
+                        or data.get("speaker_confirmed") is not True
+                        or data.get("echo_owner") not in ("software", "device")):
+                    raise SetupError("trial_unconfirmed", "Confirm volume and one echo owner.",
+                                     "Complete the speaker/duplex checks before the live lab.")
+                resolve(self.devices, data.get("input_id"), "input")
+                resolve(self.devices, data.get("output_id"), "output")
+                request.update({key: data[key] for key in (
+                    "input_id", "output_id", "echo_owner", "echo_confirmed", "speaker_confirmed",
+                )})
+                request.update(scenario=scenario, seconds=seconds)
+                if scenario == "speech":
+                    request["settings_scope"] = [
+                        "preset", "speech", "recognizer", "interruption", "seconds",
+                    ]
+            elif kind != "lab_fixture":
+                request["source"] = self._source(data.get("source"))
+            return self._launch(request, self.lab_command, seconds, seconds + 120)
 
     def _launch(self, request: dict, command: list[str], duration: int, timeout: int) -> dict:
         with self.lock:
@@ -408,6 +536,7 @@ class AudioControl:
                     "duration": duration,
                     "level": 0,
                 },
+                "events": [], "event_cursor": 0,
             }
             self.touched = time.monotonic()
             self.deadline = self.touched + timeout
@@ -425,6 +554,12 @@ class AudioControl:
                 with self.lock:
                     if job["status"] != "running":
                         continue
+                    if event.get("type") == "room_snapshot":
+                        job["room"] = event["room"]
+                    elif event.get("type") == "room_event":
+                        job["event_cursor"] += 1
+                        job["events"].append({**event, "sequence": job["event_cursor"]})
+                        job["events"] = job["events"][-256:]
                     if event.get("type") == "progress":
                         job["progress"].update(event)
                     elif event.get("type") == "transcript":
@@ -442,6 +577,9 @@ class AudioControl:
                         job["status"] = "completed"
                         result = copy.deepcopy(job["result"])
                         result["selection"] = job["request"]
+                        result["selection"] = {
+                            k: v for k, v in result["selection"].items() if k != "_controller"
+                        }
                         result["tested_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
                         if job["request"]["kind"] in TEST_SECONDS:
                             self.results.append(result)
@@ -466,7 +604,7 @@ class AudioControl:
         finally:
             process.stdout.close()
 
-    def poll(self, job_id: str) -> dict:
+    def poll(self, job_id: str, *, controller=None, cursor=None, renew_legacy=True) -> dict:
         with self.lock:
             if not self.job or job_id != self.job["id"]:
                 raise SetupError(
@@ -474,11 +612,28 @@ class AudioControl:
                     "This test is no longer available.",
                     "Refresh setup and explicitly start another test.",
                 )
-            self.touched = time.monotonic()
+            if renew_legacy and self.job["request"].get("_controller") is None:
+                self.touched = time.monotonic()  # Legacy device-free callers retain old semantics.
             public = copy.deepcopy(self.job)
+            owner = public["request"].pop("_controller", None)
+            public["is_controller"] = owner is not None and owner == controller
+            if cursor is not None:
+                events = public.get("events", [])
+                public["events_reset"] = bool(events and cursor < events[0]["sequence"] - 1)
+                public["events"] = [e for e in events if e["sequence"] > cursor]
             if "result" in public:
                 public["result"].pop("candidate", None)
             return public
+
+    def heartbeat(self, job_id, controller):
+        with self.lock:
+            if (not self.job or self.job["id"] != job_id or not controller
+                    or self.job["request"].get("_controller") != controller):
+                raise SetupError("controller_mismatch", "This tab does not own that take.",
+                                 "Observe the take or stop it; start a new take explicitly.")
+            if self.job["status"] == "running":
+                self.touched = time.monotonic()
+            return {"status": self.job["status"]}
 
     def _stop_locked(self, reason: str) -> None:
         if self.job and self.job["status"] == "running":
@@ -491,13 +646,27 @@ class AudioControl:
                 except subprocess.TimeoutExpired:
                     self.process.kill()
                     self.process.wait(timeout=1)
+            room = self.job.get("room")
+            if room:
+                room["status"] = "closed"
+                room["termination_evidence"] = "Worker stopped; last confirmed playback only"
+                for turn in room.get("utterances", []):
+                    if turn["status"] == "provisional":
+                        turn["status"] = "discarded"
+                for response in room.get("responses", []):
+                    if response["status"] in ("requested", "playing"):
+                        response["status"] = "cancelled"
 
     def stop(self) -> dict:
         with self.lock:
             self._stop_locked("Stopped. Microphone and speaker are released.")
             if self.job and "result" in self.job:
                 self.job["result"].pop("candidate", None)
-            return copy.deepcopy(self.job) if self.job else {"status": "idle"}
+            if self.job:
+                public = copy.deepcopy(self.job)
+                public["request"].pop("_controller", None)
+                return public
+            return {"status": "idle"}
 
     def diagnostics(self, data: dict) -> list[dict]:
         with self.lock:

@@ -26,12 +26,19 @@ quality is still insufficient.
    window must be long enough; silence, gaps, excessive clipping, detected overlap,
    and weak consistency fail the take. Review who spoke and the result, then press
    **Save this voice profile**. Repeating or stopping discards an unsaved candidate.
-5. Enroll a second person. Choose participation, then deliberately start **Try
+5. Install the English CPU profile in **Quick Setup > Models** for Zipformer
+   transcription, or install the selected optional final recognizer. The speaker
+   and segmentation models alone do not provide speech transcription.
+6. Enroll a second person. Choose participation, then deliberately start **Try
    group turns**. Speak in turn, including an unenrolled guest. Capture closes
    after 30 seconds; attribution/transcription then run locally. Review the names,
    session speaker tracks, uncertain states, and transcripts. Test responses are
    simulated and silent. This is an offline analysis of bounded captured audio,
    not a live conversational assistant.
+
+Failed previews show the specific error and recovery steps beside the trial
+button. Model-loading failures happen before microphone capture and should be
+repaired through Models rather than Windows microphone permissions.
 
 Use Stop any time. Enrollment/group jobs share the acoustic/voice operation slot,
 killable worker, deadlines, and three-second browser lease. No speaker opens in

@@ -3,26 +3,59 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Room audio setup · Family Harness</title>
+  <title>Family Harness · Local dashboard</title>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
+  <script src="/dashboard.js" defer></script>
 </head>
 <body>
-  <header>
-    <div class="brand">Family Harness <span class="tag">Development preview</span></div>
-    <h1>A room that can hear you.</h1>
-    <p>Set up audio on this computer. No account or voice model is needed.</p>
+  <a class="skip-link" href="#workspace">Skip to workspace</a>
+  <header class="app-header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">FH</span><div>Family Harness
+      <span class="muted brand-subtitle">Your local house agent · development preview</span></div></div>
+    <span class="local-label">On this computer</span>
+    <button id="nav-toggle" type="button" aria-expanded="false" aria-controls="app-nav">Menu</button>
   </header>
+  <div class="app-frame">
+  <nav class="app-nav" id="app-nav" aria-label="Application">
+    <span class="nav-label">WORKSPACE</span>
+    <button type="button" data-route="home" aria-current="page">Home</button>
+    <button type="button" data-route="setup/room">Quick Setup</button>
+    <button type="button" data-route="setup/devices">Rooms &amp; devices</button>
+    <button type="button" data-route="setup/people">People &amp; voices</button>
+    <button type="button" data-route="lab">Voice Lab</button>
+    <button type="button" data-route="results">Results &amp; compare</button>
+    <button type="button" data-route="health">Health &amp; help</button>
+    <button type="button" data-route="privacy">Settings &amp; privacy</button>
+    <div class="nav-footnote">Windows native audio<br>English · local CPU<br>One room</div>
+  </nav>
+  <div class="workspace">
   <aside class="control" aria-label="Listening controls">
     <div><strong id="listening">Microphone off · no test running</strong>
-      <p id="active-room">Choose your room below.</p></div>
-    <button id="stop" class="stop" type="button">Stop / mute audio</button>
+      <p id="active-room">Choose your room below.</p><p id="active-devices">Choose a microphone and speaker.</p></div>
+    <button id="stop" class="stop" type="button">Stop all</button>
   </aside>
-  <main>
+  <main id="workspace">
     <div id="error" class="notice error" role="alert" hidden></div>
     <div id="notice" class="notice" role="status" hidden></div>
-    <form id="setup-form">
-      <section class="card" aria-labelledby="room-heading">
+    <div class="workspace-title"><div><p class="eyebrow" id="breadcrumb">Home / Overview</p>
+      <h1 id="page-title">Make this room work for you.</h1></div><span class="tag">Local preview</span></div>
+    <section id="home-view" class="view">
+      <div class="welcome-panel"><p class="eyebrow">A useful room starts here</p>
+        <h2>Hear clearly. Know who spoke.<br>Stay in control.</h2>
+        <p>Configure your room, try local speech, then tune it with live tests. Listening starts only when you choose a test.</p>
+        <button class="primary" type="button" data-route="setup/room">Set up Voice Management</button>
+        <button type="button" id="resume-setup">Resume setup</button></div>
+      <div id="readiness" class="readiness" aria-label="Room readiness"></div>
+      <p class="muted">The conversational agent, memory, tools and sustained room sessions follow later phases. Household speech, identity and physical interruption quality need deliberate validation.</p>
+    </section>
+    <div id="setup-toolbar" hidden><div class="actions view-tabs" aria-label="Voice workspace views">
+      <button type="button" data-route="setup/room">Guided setup</button><button type="button" data-route="lab">Voice Lab</button><button type="button" data-route="results">Results &amp; compare</button></div>
+      <div id="setup-steps" class="setup-steps" aria-label="Voice setup steps"></div>
+      <p id="step-hint" class="muted"></p>
+    </div>
+    <form id="setup-form" novalidate>
+      <section class="card guided-section" data-step="room" aria-labelledby="room-heading" hidden>
         <div class="step">01 · Your space</div>
         <h2 id="room-heading">Where will you use it?</h2>
         <div class="grid">
@@ -34,7 +67,7 @@
         <p>Setup listens only during a test you start. Every test ends automatically. Stop / mute ends it
           immediately; closing this page ends it within three seconds. Audio stays in memory and is discarded.</p>
       </section>
-      <section class="card" aria-labelledby="input-heading">
+      <section class="card guided-section" data-step="devices" aria-labelledby="input-heading" hidden>
         <div class="step">02 · Microphone on this computer</div>
         <h2 id="input-heading">Choose what hears you.</h2>
         <p>Built-in, USB, wired, and Bluetooth devices must appear in Windows Sound settings.
@@ -52,16 +85,16 @@
           <button class="test primary" data-kind="microphone" type="button">Test microphone · 8 seconds</button></div>
         <p id="device-warning" role="status"></p>
       </section>
-      <section class="card" aria-labelledby="speaker-heading">
-        <div class="step">03 · Speaker on this computer</div>
+      <section class="card guided-section" data-step="devices" aria-labelledby="speaker-heading" hidden>
+        <div class="step">02 · Speaker on this computer</div>
         <h2 id="speaker-heading">Choose what you hear.</h2>
         <label>Speaker<select id="output-device" required><option value="">Choose a speaker</option></select></label>
         <p>Turn your volume down first. Play the quiet test notes, then adjust to a comfortable level.</p>
         <div class="actions"><button class="test primary" data-kind="speaker" type="button">Test speaker · 3 seconds</button></div>
         <label class="check"><input type="checkbox" id="speaker-confirmed">I heard the sound at a comfortable volume.</label>
       </section>
-      <section class="card" aria-labelledby="acoustics-heading">
-        <div class="step">04 · Placement, noise &amp; echo</div>
+      <section class="card guided-section" data-step="acoustics" aria-labelledby="acoustics-heading" hidden>
+        <div class="step">03 · Placement, noise &amp; echo</div>
         <h2 id="acoustics-heading">Try the whole room.</h2>
         <p>Test while quiet, then speak from nearby and from the farthest position you expect to use.
           Test the microphone again at each position.</p>
@@ -89,25 +122,33 @@
         </div>
         <div id="results" aria-label="Audio test results"></div>
       </section>
-      <section class="card" aria-labelledby="save-heading">
-        <div class="step">05 · Keep your choices</div>
+      <section class="card guided-section" data-step="review" aria-labelledby="save-heading" hidden>
+        <div class="step">08 · Keep your choices</div>
         <h2 id="save-heading">Save &amp; return anytime.</h2>
         <p>Saving does not start listening. Missing devices require a new selection; the app never switches microphones silently.</p>
         <button id="save" class="primary" type="submit">Save room audio setup</button>
         <div id="summary" role="status"></div>
-        <p class="muted">Next, try the local English voice and people previews below. Live room
-          conversations remain planned. Try the bounded interruption trial below.
+        <p class="muted">Try the bounded live Voice Lab. Sustained room
+          conversations remain planned.
           Energy checks cannot verify transcription quality.</p>
         <details><summary>Advanced diagnostics</summary><pre id="diagnostics">No test results yet.</pre></details>
       </section>
     </form>
-    <section class="card" aria-labelledby="voice-heading">
-      <div class="step">06 · Local English voice preview</div>
+    <section class="card guided-section" data-step="models" aria-labelledby="voice-heading" hidden>
+      <div class="step">04 · Local English voice preview</div>
       <h2 id="voice-heading">Try hearing and speaking offline.</h2>
       <p>Install the English CPU evaluation profile separately: about 135 MiB of downloads for speech
         detection, transcription, and a test voice. Allow 400 MiB of free disk space during installation.
         Models stay on this PC. Installing or checking speed leaves audio off.</p>
       <p id="voice-status" role="status">Checking the local profile.</p>
+      <details><summary>Optional final recognizers</summary>
+        <p>Zipformer streams drafts. Optional English CPU models finalize whole utterances; they do not improve missed speech detection.</p>
+        <label>Model to manage<select id="optional-recognizer"><option value="parakeet-v2">Parakeet v2 · 630.6 MiB</option><option value="whisper-small-en">Whisper small.en · 358.1 MiB</option></select></label>
+        <p>Allow 1.5 GiB / 1 GiB staging space respectively. Acquisition contacts the catalog sources only through these explicit actions.</p>
+        <label>Original model folder for offline import<input id="recognizer-source" dir="auto" placeholder="C:\Models\FinalRecognizer"></label>
+        <div class="actions"><button type="button" class="model-action" data-model-action="recognizer_install">Download selected final</button><button type="button" class="model-action" data-model-action="recognizer_import">Import selected final</button><button type="button" class="model-action" data-model-action="recognizer_remove">Remove selected final</button></div>
+        <p id="optional-model-state" role="status"></p>
+      </details>
       <div class="actions">
         <button id="voice-install" class="voice-action primary" data-action="voice_install" type="button">Download English profile · 135 MiB</button>
         <button id="voice-warm" class="voice-action" data-action="voice_warm" type="button">Check model speed · audio off</button>
@@ -138,12 +179,12 @@
         Compare the microphone level and transcript at your intended distance. A headset may reduce
         sound away from its boom microphone; level adjustment cannot recover speech hidden by noise.</p>
       <p id="voice-result" role="status"></p>
-      <p class="muted">Transcripts stay in this page and process memory. Only numeric diagnostics, model
+      <p class="muted">Transcripts and dashboard diagnostics stay in this page and process memory. Model
         versions, and hardware details are saved. Household offline validation is still pending.</p>
       <details><summary>Voice performance diagnostics</summary><pre id="voice-diagnostics">No benchmark yet.</pre></details>
     </section>
-    <section class="card" aria-labelledby="people-heading">
-      <div class="step">07 · People and group turns preview</div>
+    <section class="card guided-section" data-step="people" aria-labelledby="people-heading" hidden>
+      <div class="step">05 · People and group turns preview</div>
       <h2 id="people-heading">Enroll a voice, with their agreement.</h2>
       <p>Voice profiles store a local mathematical description of a voice and a name. Recordings are
         discarded. Matching can be wrong or remain unknown; it never grants access to private data or tools.
@@ -169,6 +210,7 @@
         <button id="people-save" type="button" disabled>Save this voice profile</button>
       </div>
       <div id="people-list" aria-label="Enrolled people"></div>
+      <div id="recognition-controls">
       <label for="recognition-policy">Voice recognition policy</label>
       <select id="recognition-policy">
         <option value="free">Free · recognize more voices, with more mistakes</option>
@@ -195,6 +237,7 @@
         <option value="enrolled">Matched enrolled voices</option>
         <option value="addressed">Only explicitly addressed turns in event replay</option>
       </select></label>
+      </div>
       <p>Try two enrolled people and an unenrolled guest, speaking in turn. The microphone closes after
         30 seconds; the preview then finds speaker changes and attributes transcripts. Test responses are
         simulated and silent. Overlapping speech needs repetition, one person at a time.</p>
@@ -208,8 +251,8 @@
       <div id="group-turns" aria-label="Attributed preview turns"></div>
       <details><summary>People preview diagnostics</summary><pre id="people-diagnostics"></pre></details>
     </section>
-    <section class="card" aria-labelledby="interruption-heading">
-      <div class="step">08 · Bounded interruption preview</div>
+    <section class="card guided-section" data-step="live" aria-labelledby="interruption-heading" hidden>
+      <div class="step">07 · Bounded interruption preview</div>
       <h2 id="interruption-heading">Interrupt the test voice.</h2>
       <p>First test your speaker volume and duplex echo removal above. Install the English,
         speaker and segmentation models. Enroll two consenting people to try names.
@@ -227,7 +270,82 @@
         and physical stopping speed still need validation.</p>
       <details><summary>Trial diagnostics · kept in this session</summary><pre id="interruption-diagnostics">No interruption trial yet.</pre></details>
     </section>
+    <section class="guided-section" data-step="timing" id="timing-stage" hidden>
+      <div id="runtime-settings" class="card tuning">
+        <p class="eyebrow">Tune the next take</p><h2>Draft settings</h2>
+        <p>Prepare changes while watching a test. Apply them to a new take; the running take keeps its settings.</p>
+        <div class="grid">
+          <label>Microphone processing preset<select id="speech-preset"></select></label>
+          <label>Final recognizer<select id="final-recognizer"><option value="zipformer">Zipformer · streaming baseline</option><option value="parakeet-v2">Parakeet v2 · whole-utterance final</option><option value="whisper-small-en">Whisper small.en · whole-utterance final</option></select></label>
+          <label>Speaker backend<select id="speaker-backend"></select></label>
+          <label>Live take duration (10–180 seconds)<input id="live-seconds" type="number" min="10" max="180" step="1" value="60" required></label>
+        </div>
+        <p class="muted">A backend change requires compatible enrollment profiles or deliberate separate reenrollment. High gain can amplify noise or clip speech.</p>
+        <details open><summary>Speech and interruption parameters</summary><div class="grid">
+          <label>Fixed gain (0–36 dB)<input id="speech-gain" type="number" min="0" max="36" step="1" required></label>
+          <label>VAD threshold (0.1–0.9)<input id="speech-vad" type="number" min="0.1" max="0.9" step="0.05" required></label>
+          <label>Completion silence (0.3–2 seconds)<input id="speech-silence" type="number" min="0.3" max="2" step="0.1" required></label>
+          <label>Streaming decoder<select id="speech-decoder"><option value="greedy_search">Greedy</option><option value="modified_beam_search">Modified beam</option></select></label>
+          <label>Onset hold (0–0.5 seconds)<input id="onset-hold" type="number" min="0" max="0.5" step="0.01" required></label>
+          <label>Onset release (0.1–1 seconds)<input id="onset-release" type="number" min="0.1" max="1" step="0.05" required></label>
+        </div><label class="check"><input id="speech-processing" type="checkbox">Use WebRTC speech conditioning (separate from echo ownership)</label>
+        <p class="muted">Adaptive gain cap: 30 dB. Thread counts, clustering, frame sizes and safety limits remain read-only.</p></details>
+        <div id="recognition-slot"></div>
+        <div class="actions"><button id="apply-draft" class="primary" type="button">Apply to next take</button><button id="restore-draft" type="button">Restore defaults in draft</button><button id="reload-settings" type="button">Reload saved settings</button></div>
+        <p id="draft-status" role="status">Loading saved settings.</p>
+        <details><summary>Save or load a local tuning profile</summary>
+          <label>Profile name<input id="profile-name" maxlength="80" dir="auto" placeholder="Living room · evening"></label>
+          <label>Saved profiles<select id="saved-profiles"><option value="">Choose a saved profile</option></select></label>
+          <div class="actions"><button id="save-settings" type="button">Save these settings</button><button id="save-profile" type="button">Save named profile</button></div>
+        </details>
+      </div>
+    </section>
+    <section id="lab-view" class="view" hidden>
+      <div class="lab-grid"><div>
+        <section class="card"><p class="eyebrow">One room · bounded live diagnostics</p><h2>Live test &amp; tune</h2>
+          <label>Scenario<select id="lab-scenario"><option value="integrated">Integrated room check</option><option value="speech">Speech and pauses · no spoken replies or identity</option><option value="people">People and guest · no spoken replies</option><option value="interruptions">Interrupt and continue · fixed cue</option><option value="quiet-playback">Quiet playback · check false interruptions</option></select></label>
+          <p id="scenario-help">Take turns, pause, interrupt a fixed reply, then let another person continue. Two enrolled people and an unknown guest make identity checks useful.</p>
+          <button id="lab-start" class="primary" type="button">Start live take</button>
+          <p class="muted">This opens the selected native microphone and speaker after models warm. Confirm volume and one echo owner in setup. No recording is saved.</p>
+          <p id="lab-instruction" role="status" aria-live="polite">Audio is off.</p>
+          <p id="lab-remaining" class="muted" role="timer" aria-live="off"></p>
+          <progress id="lab-progress" max="1" value="0" aria-label="Live take progress"></progress>
+          <div class="signal-grid"><div><label for="lab-raw">Raw input</label><meter id="lab-raw" min="0" max="1" value="0"></meter></div><div><label for="lab-clean">Processed input</label><meter id="lab-clean" min="0" max="1" value="0"></meter></div></div>
+          <p id="lab-signal" class="muted">No live measurements.</p>
+        </section>
+        <section class="card"><div class="section-heading"><h2>What happened in this take</h2><span class="tag" id="live-room-status">No session</span></div>
+          <div id="live-turns" aria-label="Live conversation turns"><p class="muted">Draft words, final turns, uncertain names and heard evidence appear here.</p></div>
+          <p id="event-notice" class="muted" role="status"></p>
+          <details><summary>Source timeline and diagnostics</summary><ol id="live-events" class="event-list"></ol><pre id="lab-diagnostics">No live take yet.</pre></details>
+        </section>
+        <section class="card"><h2>Device-free replay &amp; manager checks</h2>
+          <p>Replay an explicit local PCM16 mono WAV (8–48 kHz), or run manager fixtures for duplicate/late events and closure. These tests keep devices closed.</p>
+          <label>WAV path on this PC<input id="replay-source" dir="auto" placeholder="E:\Private\room-test.wav"></label>
+          <div class="actions"><button type="button" class="lab-action" data-lab-action="lab_replay">Replay speech &amp; turns</button><button type="button" class="lab-action" data-lab-action="group_replay">Replay people · up to 300 s</button><button type="button" class="lab-action" data-lab-action="lab_fixture">Run manager fixtures · no models</button></div>
+        </section>
+      </div><div id="lab-tuning"></div></div>
+    </section>
+    <section id="results-view" class="view" hidden><section class="card"><h2>Compare actual takes</h2>
+      <p>Results stay in memory. Live retakes contain different audio; same-input replay is repeatable. Keep nearby/far placement and model/settings differences visible.</p>
+      <div class="grid"><label>Take A<select id="take-a"></select></label><label>Take B<select id="take-b"></select></label></div>
+      <div id="comparison" role="status">Complete a take to compare its results.</div>
+      <button id="export-results" type="button" disabled>Export numeric diagnostics</button>
+    </section><section class="card"><h2>Household observations</h2><p>Enter your own ground-truth counts for the selected take B. Include every missed and rejected turn. These are user observations, independent of voice scores.</p>
+      <div id="tally-fields" class="grid"></div><button id="save-tally" type="button">Attach observations to take B</button>
+      <p id="tally-result" role="status"></p><p class="muted">Physical stopping speed needs an acoustic measurement. Software DAC timing cannot confirm what people heard.</p>
+    </section></section>
+    <section id="health-view" class="view" hidden><section class="card"><h2>Start with the symptom</h2><div id="repair-list"></div><details><summary>Failure and validation drills</summary><p>Deliberately test permission denial, unplug/reconnect, Stop during loading/playback/analysis, page closure, application restart and busy applications. Do not restart listening automatically.</p><p>Run nearby/far checks with two consenting enrolled people and a guest. Include quiet playback, overlap and fresh phrases. Record denominators and measure physical stop independently.</p></details></section></section>
+    <section id="privacy-view" class="view" hidden><section class="card"><h2>Your data stays under your control</h2>
+      <p>Audio buffers, transcripts, test events and observations are kept in bounded memory. Reopening starts with audio off; takes are not restored from disk.</p>
+      <p>Room choices, explicitly saved tuning profiles, installed models and consenting voice embeddings live in local application files. Voice recognition never grants access to memories or tools.</p>
+      <p id="storage-location" dir="auto"></p>
+      <label>Appearance<select id="appearance"><option value="system">Follow system</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label>Layout direction<select id="layout-direction"><option value="auto">Automatic</option><option value="ltr">Left to right</option><option value="rtl">Right to left</option></select></label>
+      <p class="muted">Names and transcripts accept mixed English/Farsi text. Current speech profiles are English; Farsi speech quality remains unverified.</p>
+    </section></section>
+    <div id="guided-navigation" class="actions" hidden><button id="previous-step" type="button">Previous</button><button id="next-step" class="primary" type="button">Next step</button><button type="button" data-route="lab">Open Voice Lab</button></div>
   </main>
   <footer>Local control · Windows WASAPI preview · No audio uploads or saved recordings</footer>
+  </div></div>
 </body>
 </html>

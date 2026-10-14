@@ -50,6 +50,7 @@ class OnsetDetector:
         self.latched = False
         self.previous_end = None
         self.vad_seconds = 0.0
+        self.speech_active = False
 
     def accept(self, samples, at, rate=16000):
         if not math.isfinite(at) or at < 0 or rate <= 0:
@@ -66,6 +67,7 @@ class OnsetDetector:
             self.vad_seconds = 0.0
         self.vad_seconds += len(conditioned) / rate
         active = self.vad.accept(conditioned)
+        self.speech_active = active
         if active:
             self.silent_since = None
             if self.active_since is None:
@@ -86,6 +88,7 @@ class OnsetDetector:
         self.active_since = self.silent_since = self.previous_end = None
         self.latched = False
         self.vad_seconds = 0.0
+        self.speech_active = False
 
 
 class CancellableOutput:

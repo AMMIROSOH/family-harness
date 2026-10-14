@@ -1,5 +1,11 @@
 # Family Harness
 
+**D1 local dashboard and Voice Lab are now available as a diagnostic preview.**
+Run `Start-Setup.cmd` for guided room/voice setup, explicit bounded live tests,
+tuning profiles, replay, comparisons and repair. See the [dashboard guide](docs/dashboard.md).
+Household speech/identity quality and physical interruption gates remain pending;
+the conversational house agent is still under development.
+
 **Under development — room-audio, local English speech, room-manager replay, people and interruption previews.** M1.1/M1.2 audio setup and the M1.3 voice-profile foundation are implemented for Windows WASAPI: a localhost wizard, bounded audio tests, local model download/import, streaming transcription, and a fixed synthesized test response. M1.4 adds a deterministic room manager, continuous file replay, and local DiPCo evaluation. M1.5 adds local voice enrollment, uncertain speaker matching, attributed group replay, participation policies, and bounded microphone previews. Household hardware and speech/identity quality gates are still pending. M1.6 adds a bounded duplex interruption trial, cancellation and heard-chunk history. Continuous live room conversations, memory, and tools are not implemented yet.
 
 Family Harness aims to make a shared voice agent useful in everyday life. Start with a modest PC, a microphone, and a speaker: a family member calls the assistant, it recognizes an enrolled voice, and it responds using the appropriate context, memories, and tools. Other people can join, interrupt, continue, or disagree within the same conversation.
@@ -76,6 +82,7 @@ Help/version and installation do not open audio. `family-harness setup` explicit
 - [Product direction](docs/vision.md): scope and principles for a global solution.
 - [Architecture direction](docs/architecture.md): proposed boundaries and conversation behavior.
 - [Setup experience](docs/setup-experience.md): tools needed to make installation approachable.
+- [Local dashboard and Voice Lab](docs/dashboard.md): delivered D1 behavior, tuning, replay, privacy, and validation limits.
 - [Application dashboard plan](docs/dashboard-plan.md): proposed application sections, user journeys, and local architecture.
 - [Dashboard delivery roadmap](docs/dashboard-roadmap.md): Quick Setup and live Voice Management first, followed by the wider application.
 - [Voice Management workspace](docs/voice-management-workspace.md): proposed guided setup, live test catalog, tuning, comparisons, and recovery.

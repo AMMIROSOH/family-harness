@@ -100,7 +100,10 @@ def test_cli_saved_selection_one_run_override_and_management(tmp_path, monkeypat
     assert RecognitionPolicies(path).snapshot()["name"] == "free"
 
 
-def test_worker_uses_frozen_policy_settings_and_reports_them(tmp_path, monkeypatch, devices):
+@pytest.mark.parametrize("recognizer_backend", ["zipformer", "parakeet-v2"])
+def test_worker_uses_frozen_policy_settings_and_reports_them(
+    tmp_path, monkeypatch, devices, recognizer_backend,
+):
     from family_harness import people_worker
 
     provider = SimpleNamespace(backend="titanet-large", model_hash="a" * 64,
@@ -114,6 +117,18 @@ def test_worker_uses_frozen_policy_settings_and_reports_them(tmp_path, monkeypat
     monkeypatch.setattr(people_worker, "SherpaEmbedding", lambda *a: provider)
     monkeypatch.setattr("family_harness.group.SherpaDiarizer", lambda *a: object())
     monkeypatch.setattr("family_harness.asr.load_recognizer", lambda *a: object())
+    profile = tmp_path / "english-cpu-v2"
+    monkeypatch.setattr("family_harness.models.ModelStore", lambda root: SimpleNamespace(
+        profile=profile, verify=lambda: None,
+    ))
+
+    def streaming_recognizer(path):
+        # Catalog files live under stt, not at the profile root. Fail before capture
+        # if a worker regresses to the wrong path.
+        assert path == profile / "stt"
+        return object()
+
+    monkeypatch.setattr("family_harness.asr.StreamingUtteranceRecognizer", streaming_recognizer)
     monkeypatch.setattr("family_harness.devices.discover_native", lambda *a: (devices, []))
     monkeypatch.setitem(sys.modules, "sounddevice", SimpleNamespace())
     monkeypatch.setattr(people_worker, "capture_samples", lambda *a, **k: (np.ones(16000), {}))
@@ -127,5 +142,5 @@ def test_worker_uses_frozen_policy_settings_and_reports_them(tmp_path, monkeypat
     result = people_worker.execute({"kind": "people_trial", "backend": provider.backend,
                                    "models": str(tmp_path), "people": str(people.path),
                                    "recognition_policy": policy, "participation": "all",
-                                   "recognizer": "parakeet-v2"}, send=lambda event: None)
+                                   "recognizer": recognizer_backend}, send=lambda event: None)
     assert result["recognition_policy"] == policy

@@ -1,7 +1,7 @@
 # Quick Setup: Voice Management workspace
 
-**D1 build specification, proposed 2026-10-12.** This describes new dashboard work,
-not additional functionality already present. See the
+**D1 build specification, 2026-10-12.** The software preview is implemented;
+see the [delivered dashboard guide](dashboard.md) for behavior and quality limits. See the
 [application plan](dashboard-plan.md) and [delivery roadmap](dashboard-roadmap.md).
 
 ## One workspace, two views

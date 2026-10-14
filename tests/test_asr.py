@@ -3,7 +3,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from family_harness.asr import SherpaUtteranceRecognizer, load_recognizer, recognizer_catalog
+from family_harness.asr import (
+    SherpaUtteranceRecognizer,
+    StreamingUtteranceRecognizer,
+    load_recognizer,
+    recognizer_catalog,
+)
 from family_harness.errors import SetupError
 
 
@@ -53,3 +58,15 @@ def test_optional_catalog_is_pinned_and_missing_models_are_actionable(tmp_path):
         assert f"install-recognizer {backend}" in error.value.recovery
     with pytest.raises(ValueError):
         recognizer_catalog("unknown")
+
+
+def test_zipformer_load_failure_is_a_model_error_not_a_microphone_error(tmp_path, monkeypatch):
+    def missing_files(*args):
+        raise AssertionError("tokens.txt does not exist")
+
+    monkeypatch.setattr("family_harness.asr.SherpaStt", missing_files)
+    with pytest.raises(SetupError) as error:
+        StreamingUtteranceRecognizer(tmp_path / "stt")
+    assert error.value.code == "recognizer_load_failed"
+    assert "Quick Setup > Models" in error.value.recovery
+    assert "microphone has not started" in error.value.recovery

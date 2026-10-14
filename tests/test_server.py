@@ -39,7 +39,7 @@ def request(server, path, body=None, headers=None, raw=None):
 
 def test_page_and_discovery_never_start_audio(server):
     status, headers, body = request(server, "/")
-    assert status == 200 and b"Room audio setup" in body
+    assert status == 200 and b"Quick Setup" in body and b"Voice Lab" in body
     assert "frame-ancestors 'none'" in headers["Content-Security-Policy"]
     assert "microphone=()" in headers["Permissions-Policy"]
     assert request(server, "/api/devices")[0] == 200
@@ -47,7 +47,7 @@ def test_page_and_discovery_never_start_audio(server):
     assert server.audio.job is None
 
 
-@pytest.mark.parametrize("path", ["/app.js", "/style.css", "/api/state"])
+@pytest.mark.parametrize("path", ["/app.js", "/dashboard.js", "/style.css", "/api/state"])
 def test_packaged_assets_and_state(server, path):
     assert request(server, path)[0] == 200
 
@@ -138,6 +138,59 @@ def test_wrong_content_type_and_oversized_request(server):
 def test_stop_is_safe_without_test(server):
     status, _, body = request(server, "/api/stop", {})
     assert status == 200 and json.loads(body)["status"] == "idle"
+
+
+def test_dashboard_save_conflict_and_cli_policy_visibility(server):
+    state = json.loads(request(server, "/api/state")[2])["dashboard"]
+    settings = state["settings"]
+    settings["speech"]["silence"] = 1.2
+    settings["recognition_name"] = "free"
+    settings["matching"].update(threshold=.2, margin=.04)
+    change = {"revision": 0, "settings": settings, "name": "خانه"}
+    assert request(server, "/api/settings", change, {"X-Setup-Token": "wrong"})[0] == 403
+    assert request(server, "/api/settings", change)[0] == 200
+    assert server.audio.recognition_policies.snapshot()["name"] == "free"
+    assert request(server, "/api/settings", change)[0] == 400
+    server.audio.recognition_policies.select("strict")
+    saved = json.loads(request(server, "/api/state")[2])["dashboard"]
+    assert saved["settings"]["recognition_name"] == "strict"
+    assert saved["profiles"]["خانه"]["speech"]["silence"] == 1.2
+    assert server.audio.process is None
+
+
+def test_http_observations_cannot_renew_even_a_legacy_job(server, tmp_path, selection):
+    import sys
+    import time
+
+    worker = tmp_path / "wait.py"
+    worker.write_text("import sys,time\nsys.stdin.readline()\ntime.sleep(60)\n")
+    server.audio.command = [sys.executable, str(worker)]
+    server.audio.lease_seconds = .2
+    request(server, "/api/devices")
+    job = server.audio.start({**selection, "kind": "microphone"})
+    for _ in range(6):
+        assert request(server, f"/api/job?id={job['id']}")[0] == 200
+        request(server, "/api/state")
+        time.sleep(.07)
+    assert server.audio.job["status"] == "cancelled"
+
+
+def test_explicit_launch_flags_override_saved_dashboard_without_rewriting_it(tmp_path, devices):
+    from family_harness.dashboard import DashboardStore, defaults
+
+    path = tmp_path / "room.json"
+    settings = defaults()
+    store = DashboardStore(path.with_name("dashboard-settings.json"), settings)
+    store.save({"revision": 0, "settings": settings})
+    original = store.path.read_bytes()
+    instance = create_server(0, path, AudioControl(discovery=lambda: (devices, [])),
+                             recognizer="parakeet-v2", preset="close-talk")
+    try:
+        assert instance.audio.recognizer == "parakeet-v2"
+        assert instance.dashboard_state()["settings"]["speech"]["processing"] is False
+        assert store.path.read_bytes() == original
+    finally:
+        instance.server_close()
 
 
 def test_occupied_port_falls_back_to_loopback(server, tmp_path, devices):

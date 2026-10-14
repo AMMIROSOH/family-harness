@@ -27,6 +27,7 @@ class RoomEvent:
         required = {
             "session_started": (),
             "session_closed": (),
+            "test_cue": (),
             "audio_gap": (),
             "speech_started": ("start",),
             "transcript": ("utterance_id", "revision", "text", "final", "start", "end"),
@@ -223,6 +224,13 @@ class RoomManager:
             if commands:
                 self.counts["interruptions"] += 1
             return commands
+        if event.kind == "test_cue":
+            commands = self._cancel_responses()
+            self.response_sequence += 1
+            rid = f"{self.session_id}:response:{self.response_sequence}"
+            self.responses[rid] = Response(rid, "", requested_at=event.at)
+            return commands + [{"kind": "response_requested", "response_id": rid,
+                                "utterance_id": ""}]
         if event.kind.startswith("response_") or event.kind.startswith("playback_"):
             return self._response(event)
         data = event.data
@@ -333,7 +341,10 @@ class RoomManager:
         commands = []
         for response in self.responses.values():
             if response.status in ("requested", "playing") and (
-                source_id is None or self.utterances[response.utterance_id].source_id == source_id
+                source_id is None or (
+                    response.utterance_id in self.utterances
+                    and self.utterances[response.utterance_id].source_id == source_id
+                )
             ) and (onset is None or onset >= response.requested_at):
                 response.status = "cancelled"
                 commands.extend(

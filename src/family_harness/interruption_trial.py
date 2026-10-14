@@ -14,7 +14,12 @@ import numpy as np
 from family_harness.audio import BUFFER_FRAMES, AudioClock, AudioFrame, WebRtcEcho, dbfs, format_for
 from family_harness.devices import resolve
 from family_harness.errors import SetupError
-from family_harness.interruptions import CancellableOutput, GenerationToken, OnsetDetector
+from family_harness.interruptions import (
+    CancellableOutput,
+    GenerationToken,
+    InterruptionSettings,
+    OnsetDetector,
+)
 from family_harness.room import RoomEvent, RoomManager
 from family_harness.speech import SPEECH_RATE, StreamingResampler, speech_input
 
@@ -51,10 +56,7 @@ class TrialSession:
         self.commands = Counter()
         self.output = None
         self.send("session_started", 0)
-        requested = self.send("transcript", 0, {
-            "utterance_id": "trial-control", "revision": 1, "text": "Begin the guided trial",
-            "final": True, "start": 0, "end": 0,
-        }, source="control")
+        requested = self.send("test_cue", 0, source="control")
         self.response_id = requested[-1]["response_id"]
         self.generation = GenerationToken(self.response_id)
 
@@ -93,7 +95,9 @@ def capture_interruption(request, devices, sd, voice, session, send, echo_factor
     output = session.output
     echo = echo_factory(rate) if request["echo_owner"] == "software" else None
     converter = StreamingResampler(rate, SPEECH_RATE) if rate != SPEECH_RATE else None
-    detector = OnsetDetector(voice.vad, processor=speech_input(voice.settings))
+    detector = OnsetDetector(voice.vad, InterruptionSettings(**request.get(
+        "interruption_settings", {},
+    )), processor=speech_input(voice.settings))
     buffer = queue.Queue(maxsize=BUFFER_FRAMES)
     sequence, dropped = 0, 0
     capture_limit = threading.Event()

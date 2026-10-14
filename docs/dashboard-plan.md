@@ -1,6 +1,7 @@
 # Application dashboard plan
 
-**Proposed product plan, 2026-10-12. No dashboard implementation is delivered by this document.**
+**Product direction, 2026-10-12. D1 is implemented as a diagnostic preview; later sections remain planned.**
+See the [delivered dashboard guide](dashboard.md) for available behavior and limits.
 
 Family Harness will have one local application dashboard for setting up, testing,
 using, and maintaining a shared house agent. Quick Setup is its first implemented

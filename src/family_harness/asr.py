@@ -63,9 +63,17 @@ class StreamingUtteranceRecognizer:
     """Evaluate the complete audio independently of VAD and early endpointing."""
 
     def __init__(self, path: Path):
-        import sherpa_onnx
+        try:
+            import sherpa_onnx
 
-        self.stt = SherpaStt(sherpa_onnx, path)
+            self.stt = SherpaStt(sherpa_onnx, path)
+        except (ImportError, OSError, RuntimeError, ValueError, AssertionError) as exc:
+            raise SetupError(
+                "recognizer_load_failed", "The local Zipformer speech recognizer could not load.",
+                "Check the English CPU profile in Quick Setup > Models. If it is damaged, "
+                "reinstall or import its pinned files; repair the Python installation if needed. "
+                "The microphone has not started.",
+            ) from exc
 
     def decode(self, samples: np.ndarray) -> str:
         samples = bounded_audio(samples)

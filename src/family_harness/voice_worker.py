@@ -51,7 +51,8 @@ def execute(request: dict, send=emit) -> dict:
     if kind == "voice_remove":
         store.remove()
         return {"kind": kind, "status": "removed"}
-    from family_harness.speech import VOICE_PRESETS, LocalVoice
+    from family_harness.dashboard import worker_settings
+    from family_harness.speech import LocalVoice
     from family_harness.voice_trial import Measurements, capture, playback, replay, synthesize
 
     measurements = Measurements()
@@ -59,10 +60,8 @@ def execute(request: dict, send=emit) -> dict:
         send({"type": "progress", "phase": "loading", "seconds": 0, "duration": 1})
         before = time.perf_counter()
         store.verify()
-        if "preset" in request:
-            voice = LocalVoice(store.profile, VOICE_PRESETS[request["preset"]])
-        else:
-            voice = LocalVoice(store.profile)
+        voice = LocalVoice(store.profile, worker_settings(request)) \
+            if "preset" in request or "speech_settings" in request else LocalVoice(store.profile)
         backend = request.get("recognizer", "zipformer")
         if backend != "zipformer":
             from family_harness.asr import load_recognizer, recognizer_catalog
@@ -75,7 +74,7 @@ def execute(request: dict, send=emit) -> dict:
         result.update(recognizer=backend, recognizer_catalog=result_catalog)
         send({"type": "progress", "phase": "warming", "seconds": 0, "duration": 1})
         result.update(voice.warm())
-        if "preset" in request:
+        if "preset" in request or "speech_settings" in request:
             from dataclasses import asdict
 
             result["speech_settings"] = asdict(voice.settings)
@@ -131,11 +130,13 @@ def execute(request: dict, send=emit) -> dict:
         result["speech_processing_real_time_factor"] = round(
             sum(measurements.decode_ms) / (result["audio_seconds"] * 1000), 3
         )
-    report = Path(request["report"]) if request.get("report") else store.root / "benchmark.json"
-    report.parent.mkdir(parents=True, exist_ok=True)
-    temporary = report.with_suffix(".tmp")
-    temporary.write_text(json.dumps(public_report(result), indent=2), "utf-8")
-    temporary.replace(report)
+    # Dashboard captures/results are volatile. CLI benchmark/report behavior stays explicit.
+    if not request.get("_controller") or request.get("report"):
+        report = Path(request["report"]) if request.get("report") else store.root / "benchmark.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        temporary = report.with_suffix(".tmp")
+        temporary.write_text(json.dumps(public_report(result), indent=2), "utf-8")
+        temporary.replace(report)
     return result
 
 
